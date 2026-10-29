@@ -2,6 +2,8 @@
 
 **A filter, not a feed.** FINN reads every exchange filing and end-of-day print across a portfolio and shows an investor only the few things that need them. When they want to go deeper, it *audits* management against their own words instead of summarising them.
 
+**Live demo: https://finn-6xsx.onrender.com** (open on a phone; first load after idle takes ~50 s)
+
 Mobile-first web app (installable PWA) · Python/FastAPI backend · React frontend · runs fully without an LLM key, gets sharper with a free one.
 
 ---

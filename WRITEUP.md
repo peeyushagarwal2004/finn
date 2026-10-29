@@ -5,7 +5,7 @@ Hello ENAM team,
 
 Please find my submission for the FINN build challenge.
 
-- **Prototype (open on a phone):** <DEPLOYED_URL>
+- **Prototype (open on a phone):** https://finn-6xsx.onrender.com (free tier: the first load after idle can take ~50 s to wake)
 - **Repository:** https://github.com/peeyushagarwal2004/finn
 - **AI build history:** the full Claude Code session export is attached (session-export.zip)
 
