@@ -1,0 +1,12 @@
+# Render blueprint: free web service built from the Dockerfile.
+services:
+  - type: web
+    name: finn
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/meta
+    envVars:
+      - key: GEMINI_API_KEY      # optional: free tier at aistudio.google.com; FINN runs rules-only without it
+        sync: false
+      - key: GROQ_API_KEY        # optional alternative free provider
+        sync: false
