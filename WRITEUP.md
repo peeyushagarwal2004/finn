@@ -6,8 +6,8 @@ Hello ENAM team,
 Please find my submission for the FINN build challenge.
 
 - **Prototype (open on a phone):** <DEPLOYED_URL>
-- **Repository:** <GITHUB_URL>
-- **AI build history:** <CLAUDE_CODE_TRANSCRIPT_LINK>
+- **Repository:** https://github.com/peeyushagarwal2004/finn
+- **AI build history:** the full Claude Code session export is attached (session-export.zip)
 
 **What I built.** FINN is a mobile-first PWA built on one idea: *the product competes on how much it lets you not read.*
 
