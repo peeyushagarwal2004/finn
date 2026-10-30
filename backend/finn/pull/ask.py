@@ -30,6 +30,18 @@ def _chunks(symbol):
                 continue
             for i in range(0, len(txt), 900):
                 out.append({"label": t["label"], "speaker": sp, "page": page, "url": t["url"], "text": txt[i:i + 1100]})
+    # the latest annual report, if the research job has already read it (it's cached by then)
+    from ..sources import screener
+    ars = screener.company(symbol)["documents"].get("annual_reports") or []
+    if ars:
+        from .. import store
+        pages = store.kv_get("pdftext", f"{ars[0]['url']}#600") or []
+        for n, txt in enumerate(pages):
+            txt = " ".join(txt.split())
+            for i in range(0, len(txt), 1000):
+                if len(txt) > 200:
+                    out.append({"label": f"Annual report {ars[0]['year']}", "speaker": "Annual report", "page": n + 1,
+                                "url": ars[0]["url"], "text": txt[i:i + 1100]})
     return out
 
 

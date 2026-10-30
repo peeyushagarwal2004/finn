@@ -7,7 +7,7 @@ import sys
 from . import store
 from .config import SEED_DIR
 
-NAMESPACES = ["company", "eod", "guidance", "research", "results_card", "people", "pdftext", "nse", "llm"]
+NAMESPACES = ["company", "eod", "guidance", "governance", "research", "results_card", "people", "pdftext", "nse", "llm"]
 
 
 def export():

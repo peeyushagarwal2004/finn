@@ -61,6 +61,19 @@ def get_holdings():
     return digest.holdings()
 
 
+@app.get("/api/stats")
+def stats():
+    """What FINN has read and what it cost, for the 'How FINN works' page."""
+    with store._lock:
+        counts = dict(store._conn.execute("SELECT ns, COUNT(*) FROM kv GROUP BY ns").fetchall())
+        filings = store._conn.execute("SELECT COUNT(*) FROM filings").fetchone()[0]
+        pdf_pages = store._conn.execute("SELECT COALESCE(SUM(json_array_length(v)), 0) FROM kv WHERE ns='pdftext'").fetchone()[0]
+    return {"filings_stored": filings, "pdfs_read": counts.get("pdftext", 0), "pdf_pages": pdf_pages,
+            "dossiers": counts.get("research", 0), "transcripts": counts.get("guidance", 0),
+            "annual_reports": counts.get("governance", 0), "llm_cached_answers": counts.get("llm", 0),
+            "llm": llm.status(), "feed": store.kv_get("nse", "feed_stats"), "last_refresh": store.kv_get("meta", "last_refresh")}
+
+
 class RulesIn(BaseModel):
     rules: dict = {}
     sessions: int = 90

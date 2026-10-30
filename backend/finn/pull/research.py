@@ -9,11 +9,11 @@ import threading
 import time
 
 from .. import llm, store
-from . import fundamentals, guidance, ledger
+from . import annual_report, fundamentals, guidance, ledger
 
 _jobs: dict[str, threading.Thread] = {}
 _lock = threading.Lock()
-VERSION = 3  # bump to invalidate cached dossiers when the analysis changes
+VERSION = 5  # bump to invalidate cached dossiers when the analysis changes
 
 
 def get(symbol):
@@ -37,7 +37,7 @@ def start(symbol, force=False):
         t = threading.Thread(target=_run, args=(symbol,), daemon=True)
         _jobs[symbol] = t
         _save(symbol, {"symbol": symbol, "version": VERSION, "status": "running", "stage": "numbers",
-                       "stages": {"numbers": "running", "promises": "waiting", "synthesis": "waiting"}})
+                       "stages": {"numbers": "running", "promises": "waiting", "annual_report": "waiting", "synthesis": "waiting"}})
         t.start()
     return get(symbol)
 
@@ -56,6 +56,17 @@ def _run(symbol):
         doc["transcripts"] = [{k: t.get(k) for k in ("label", "call", "url", "pages", "candidates", "method", "tone", "speakers")} for t in ts]
         doc["ledger"] = ledger.build(symbol, ts)
         doc["stages"]["promises"] = "done"
+        doc["stages"]["annual_report"] = "running"
+        doc["stage"] = "annual_report"
+        _save(symbol, doc)
+
+        try:  # a 400-page PDF is the slowest, flakiest step; never let it sink the dossier
+            g = annual_report.scan(symbol)
+        except Exception as e:
+            g = {"error": f"Couldn't read the annual report ({type(e).__name__})."}
+        doc["governance"] = g
+        doc["flags"] = doc["flags"] + annual_report.flags(g)
+        doc["stages"]["annual_report"] = "done"
         doc["stages"]["synthesis"] = "running"
         doc["stage"] = "synthesis"
         _save(symbol, doc)
@@ -101,6 +112,15 @@ def _facts(doc):
     return facts
 
 
+def ledger_target(r):
+    lo, hi = r.get("low"), r.get("high")
+    if lo is None:
+        return "level"
+    if hi is None:
+        return f"{lo:g}%+"
+    return f"{lo:g}%" if lo == hi else f"{lo:g}-{hi:g}%"
+
+
 def synthesise(doc):
     facts = _facts(doc)
     ids = {f["id"] for f in facts}
@@ -127,7 +147,18 @@ def synthesise(doc):
     if missed and len(bear) < 3:
         r = missed[0]
         bear.append({"text": f"Fell short on {r['metric_label'].lower()} ({r['period']}): {r['actual']}% vs guidance.", "evidence": ["ledger"]})
-    watch = missed[0] if missed else (neg[0] if neg else None)
-    verdict = (f"Watch {watch['metric_label'].lower()} against the {watch['period']} guide." if watch and "metric_label" in watch
-               else f"Watch: {watch['title'].lower()}." if watch else "Nothing flagged; watch whether growth holds its trend.")
+    if missed:
+        r = missed[0]
+        so_far = " so far" if r.get("reported", 0) < r.get("of", 0) else ""
+        verdict = (f"{r['metric_label']} for {r['period']} is {r['actual']:g}%{so_far}, below the "
+                   f"{ledger_target(r)} management guided in the {r['said_in']} call.")
+    elif neg:
+        verdict = f"{neg[0]['title']}. {neg[0]['detail']}"
+    elif kept:
+        r = kept[0]
+        state = "is on track with" if r.get("reported", 0) < r.get("of", 0) else "met"
+        verdict = (f"{r['metric_label']} {state} management's guidance for {r['period']} ({r['actual']:g}% against "
+                   f"{ledger_target(r)}). Nothing in the statements stands out as a concern.")
+    else:
+        verdict = "No numeric guidance to check and nothing in the statements stands out as a concern."
     return {"narrative": L.get("narrative", []), "bull": bull, "bear": bear, "verdict": verdict, "mode": "rules"}

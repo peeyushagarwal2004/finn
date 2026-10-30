@@ -34,6 +34,7 @@ export const api = {
   ask: (symbol: string, question: string) =>
     j<any>("/api/ask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ symbol, q: question }) }),
   refresh: () => j<any>("/api/refresh", { method: "POST" }),
+  stats: () => j<any>("/api/stats"),
 };
 
 /* ---------- per-device preferences (rules, mutes, triage state) ---------- */

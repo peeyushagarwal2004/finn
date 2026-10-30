@@ -3,36 +3,22 @@
 
 Hello ENAM team,
 
-Please find my submission for the FINN build challenge.
+Here is my submission for the FINN build challenge.
 
-- **Prototype (open on a phone):** https://finn-6xsx.onrender.com (free tier: the first load after idle can take ~50 s to wake)
-- **Repository:** https://github.com/peeyushagarwal2004/finn
-- **AI build history:** the full Claude Code session export is attached (session-export.zip)
+- Prototype: https://finn-6xsx.onrender.com (open it on a phone; the free server can take about 50 seconds to wake up)
+- Repository: https://github.com/peeyushagarwal2004/finn
+- AI build history: the full Claude Code session export is attached
 
-**What I built.** FINN is a mobile-first PWA built on one idea: *the product competes on how much it lets you not read.*
+What I built: FINN follows a portfolio of 18 NSE companies. The main screen is a daily note: every filing and unusual price move in the window you choose, ranked and written as a headline. Results show revenue, EBITDA, PBT and PAT against last quarter and last year, read from the filed results PDF. Management changes show who is coming and going. Price moves show whether any filing explains them. Routine filings are grouped at the bottom. The alerts screen lets you set thresholds and shows how many alerts those settings would have produced over the last 90 trading days. The research screen works for any NSE company: it pulls guidance from the last four earnings calls and checks it against reported results, with a link to the transcript page for each statement. It also reads the latest annual report for the auditor's opinion, related-party disclosures and contingent liabilities, and shows where five years of operating cash went. When results come in, the results card is checked against the guidance management gave on its last call, and the portfolio screen has one table with these checks for every holding. I built those last parts around the criteria ENAM is known to look at: governance, capital allocation, returns and cash generation.
 
-The **Brief** (push) is an inbox you clear, not a feed you scroll:
-- It opens on a funnel (*"41 filings → 9 need you"*) for a window you pick, from "since your last visit" to 30 days.
-- Material items get full cards: results with QoQ/YoY read straight from the exchange-filed PDF, management changes with who's coming and going and where their bio came from, and price/volume moves.
-- The rest collapses to one line or a count.
-- Cards swipe away to done, or teach the filter to mute that kind of filing for that company.
-- The whole brief can be *played* as a 60-second audio summary.
+Main decisions:
+- I used rules wherever they were reliable enough (classification, scoring, parsing results tables, all the financial checks) and a language model only for labelling guidance sentences and writing the summary. That keeps the cost close to zero, makes the scoring explainable, and the app runs fully without an API key.
+- I'd rather show nothing than show something wrong. Parsed results are checked against reported totals, and guidance the rules can't interpret confidently is left out.
+- NSE's and BSE's APIs block automated access, so I used the public NSE RSS feed and the public filing PDFs instead.
 
-**Alerts** let the investor set price, volume and a volatility-adjusted σ threshold. Each change instantly replays 90 sessions to show what the rule would cost in pings per week. Unusual moves are cross-checked against filings, and moves *no filing explains* are ranked highest.
+What I left out: annual report analysis, user accounts, intraday data and background push notifications. The README has more detail, including a list of things that went wrong while building.
 
-**Research** (pull, any NSE ticker) leads with a **promise ledger**. Guidance from the last four concalls is turned into metric, band and period, checked against the quarters later reported, and given a verdict, a verbatim quote and a page link. Example from live data: TCS kept its 26–28% margin band in FY26 but is slightly behind in FY27. Alongside it sit a call-by-call *tone vs. numbers* view, rule-based flags on trajectory, balance sheet and cash conversion, a fact-cited bull/bear, and voice-enabled "ask the transcripts" with citations.
+Next, I'd add a shared view for a team, bring annual reports into the research, and track guidance accuracy across years.
 
-**Key decisions and trade-offs**
-- **Deterministic first, models only where judgment is needed.** Classification, materiality, results numbers and every financial check are rules. That makes them free, instant and explainable. The cheap model only *labels* pre-filtered transcript sentences: a 50-page call becomes ~25 sentences, and quotes stay verbatim. The strong model writes one synthesis per company and must cite fact ids, or the point is dropped. Everything is cached by content hash, so each company costs model calls once. The app runs fully with no key at all.
-- **Wrong is worse than empty.** Parsed results must reconcile with reported totals. Implausible margin "bands" are discarded. Rules never grade an unquantified statement. "Board meeting to consider results" is a calendar entry, not results.
-- **Size things against the company.** An order is sized vs revenue, an equity raise vs market cap (dilution), and a ₹56-lakh penalty is labelled immaterial.
-- **Legitimate sources only.** NSE/BSE APIs are bot-protected, so FINN polls NSE's public RSS and reads public PDF archives instead of evading the protection. For the same reason, LinkedIn is a search link rather than scraped. A seed snapshot and a nightly refresh keep the deployed demo working even if a source blocks the host.
-
-**Deliberately left out:** annual-report deep reading (transcripts carry the guidance; ARs are next for Ask), accounts and server-side state, intraday data, and true background web-push.
-
-**Where I'd take it next:** a desk-level shared inbox (cleared once per team), AR and investor-deck ingestion for segment, RPT and auditor flags, a multi-year credibility time series that becomes a screen, a filter that learns from swipes, and peer-relative results ("margin −310 bps vs peers −80 bps").
-
-Thank you for the thoughtful brief.
-
-Best regards,
+Thank you,
 <YOUR NAME>

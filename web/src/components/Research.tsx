@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { BarLine, Delta, fmt, Icon, Ring, Section } from "./ui";
+import { BarLine, Delta, fmt, Icon, Section } from "./ui";
 
 /* ---------- voice input (browser speech recognition; free, on-device where supported) ---------- */
 const SR: any = typeof window !== "undefined" ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition : null;
@@ -56,37 +56,33 @@ function Promises({ L }: { L: any }) {
   const s = L.score;
   return (
     <>
-      <div className="panel cred">
-        <Ring value={s.credibility} />
-        <div>
-          <div style={{ fontWeight: 600 }}>{s.scored ? `Kept ${s.kept} of ${s.scored} checkable promises` : "No checkable numeric guidance yet"}</div>
-          <div className="muted" style={{ fontSize: 13 }}>
-            {s.scored ? <>{s.near ? `${s.near} near miss · ` : ""}{s.missed} missed · from the last {L.timeline.length} calls</> : "Management gave direction but few numbers FINN can hold them to."}
-          </div>
-        </div>
+      <div className="scoreline">
+        <span className="big">{s.scored ? `${s.kept}/${s.scored}` : "–"}</span>
+        <span className="muted" style={{ fontSize: 13.5 }}>
+          {s.scored ? <>guidance targets met{s.near ? `, ${s.near} close` : ""}, {s.missed} missed, across the last {L.timeline.length} calls</> : "Management gave direction on the calls but few numbers that can be checked against results."}
+        </span>
       </div>
       {rows.length > 0 && (
-        <div className="panel" style={{ marginTop: 10, paddingTop: 2, paddingBottom: 2 }}>
+        <div>
           {rows.map((r: any, i: number) => (
             <div className="promise" key={i}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                <span className="pill">{r.metric_label}{r.period ? ` · ${r.period}` : ""}</span>
-                <span className="spacer" />
-                <span className={`pill ${VERDICT_TONE[r.verdict]}`}>{r.verdict_label}</span>
+              <div className="ptop">
+                <span>{r.metric_label}{r.period ? `, ${r.period}` : ""}</span>
+                <span className={`vd ${VERDICT_TONE[r.verdict] === "up" ? "good" : VERDICT_TONE[r.verdict] === "down" ? "bad" : VERDICT_TONE[r.verdict] === "accent" ? "mid" : "none"}`}>{r.verdict_label}</span>
               </div>
-              {r.summary && <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{r.summary}</div>}
+              {r.summary && <div style={{ fontWeight: 500, fontSize: 14, marginTop: 4 }}>{r.summary}</div>}
               <div className="quote">{r.quote.length > 260 ? r.quote.slice(0, 257) + "…" : r.quote}</div>
               <Gauge r={r} />
               <div className="pmeta">
-                <span>{r.speaker}</span><span>·</span>
+                <span>{r.speaker}</span>
                 <a href={`${r.url}#page=${r.page}`} target="_blank" rel="noreferrer">{r.said_in} call, p.{r.page}</a>
-                {r.actual_basis && <><span>·</span><span>checked on {r.actual_basis}</span></>}
+                {r.actual_basis && <span>checked against {r.actual_basis}</span>}
               </div>
             </div>
           ))}
         </div>
       )}
-      {hidden > 0 && <button className="act" onClick={() => setAll(true)} style={{ marginTop: 6 }}>Show {hidden} more statement{hidden > 1 ? "s" : ""} FINN can't check from the financials</button>}
+      {hidden > 0 && <button className="act primary" onClick={() => setAll(true)} style={{ marginTop: 10, whiteSpace: "normal", textAlign: "left" }}>Show {hidden} more that can't be checked against the financials</button>}
     </>
   );
 }
@@ -95,14 +91,14 @@ function SayDo({ L }: { L: any }) {
   const tl = L.timeline;
   if (!tl.length) return null;
   return (
-    <div className="panel">
+    <div>
       <div className="tl num">
         <div className="h">Call</div><div className="h">Tone</div><div className="h" style={{ textAlign: "right" }}>Rev YoY</div><div className="h" style={{ textAlign: "right" }}>PAT YoY</div>
         {tl.map((t: any) => (
           <FragmentRow key={t.label} t={t} />
         ))}
       </div>
-      <div className="faint" style={{ fontSize: 11.5, marginTop: 8 }}>Tone = balance of upbeat vs. cautious words in management's own remarks (−1 … +1). Figures are that quarter's reported results.</div>
+      <div className="faint" style={{ fontSize: 11.5, marginTop: 8 }}>Tone counts upbeat against cautious words in management's remarks, from −1 to +1. Growth figures are that quarter's reported results.</div>
     </div>
   );
 }
@@ -122,12 +118,12 @@ function FragmentRow({ t }: { t: any }) {
 }
 
 function Narrative({ items }: { items: any[] }) {
-  if (!items?.length) return <div className="muted" style={{ fontSize: 13 }}>Not enough checkable guidance to compare story and numbers.</div>;
+  if (!items?.length) return <div className="muted" style={{ fontSize: 13, paddingTop: 8 }}>Not enough checkable guidance to compare what was said with what was reported.</div>;
   return (
-    <div className="panel" style={{ paddingTop: 4, paddingBottom: 4 }}>
+    <div>
       {items.map((n, i) => (
         <div className="narr" key={i}>
-          <span className="dot" style={{ background: n.stance === "agree" ? "var(--up-soft)" : "var(--down-soft)", color: n.stance === "agree" ? "var(--up)" : "var(--down)" }}>{n.stance === "agree" ? "✓" : "!"}</span>
+          <span className={`dot ${n.stance === "agree" ? "up" : "down"}`}>{n.stance === "agree" ? "+" : "−"}</span>
           <div>
             <div>{n.text}</div>
             {n.evidence && <div className="ev">{Array.isArray(n.evidence) ? n.evidence.join(" · ") : n.evidence}</div>}
@@ -145,7 +141,7 @@ function Flags({ flags, section }: { flags: any[]; section?: string }) {
     <div style={{ marginTop: 10 }}>
       {f.map((x) => (
         <div className="flag" key={x.id}>
-          <span className={`pill ${x.tone === "pos" ? "up" : x.tone === "neg" ? "down" : "accent"}`} style={{ height: 22 }}>{x.tone === "pos" ? "+" : x.tone === "neg" ? "−" : "?"}</span>
+          <span className={`mk ${x.tone === "pos" ? "up" : x.tone === "neg" ? "down" : "accent"}`}>{x.tone === "pos" ? "+" : x.tone === "neg" ? "−" : "?"}</span>
           <div><b>{x.title}</b><p>{x.detail}</p></div>
         </div>
       ))}
@@ -165,21 +161,21 @@ function Ask({ symbol, name }: { symbol: string; name: string }) {
   };
   const ideas = ["What is the margin outlook?", "What are the biggest risks management sees?", "What did they say about demand?"];
   return (
-    <div className="panel">
+    <div>
       <div className="ask-box">
-        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} placeholder={`Ask ${name.split(" ")[0]}'s own transcripts…`} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} placeholder="What did they say about margins?" />
         {voice.supported && <button className={`btn ghost ${voice.live ? "down" : ""}`} onClick={voice.live ? voice.stop : voice.start} aria-label="Ask by voice"><Icon.mic /></button>}
         <button className="btn" onClick={() => go()} disabled={busy}>{busy ? "…" : "Ask"}</button>
       </div>
       {!a && (
-        <div className="chips" style={{ marginTop: 10 }}>{ideas.map((i) => <button key={i} className="chip sm" onClick={() => { setQ(i); go(i); }}>{i}</button>)}</div>
+        <div className="suggestions">{ideas.map((i) => <button key={i} onClick={() => { setQ(i); go(i); }}>{i}</button>)}</div>
       )}
       {a && (
         <>
           <div className="answer" dangerouslySetInnerHTML={{ __html: a.answer.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\[(\d+)\]/g, "<sup>[$1]</sup>") }} />
-          {a.mode === "extractive" && <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>Verbatim from the transcripts (no model configured — FINN quotes rather than paraphrases).</div>}
+          {a.mode === "extractive" && <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>Quoted directly from the transcripts, since no language model is configured.</div>}
           <details style={{ marginTop: 10 }}>
-            <summary className="muted" style={{ fontSize: 12.5 }}>{a.sources.length} passages from the calls ▾</summary>
+            <summary className="muted" style={{ fontSize: 12.5 }}>{a.sources.length} passages from the calls</summary>
             {a.sources.map((s: any) => (
               <div className="src" key={s.n}>
                 <b>[{s.n}] {s.label} · {s.speaker}</b> · <a href={`${s.url}#page=${s.page}`} target="_blank" rel="noreferrer">p.{s.page}</a>
@@ -193,7 +189,7 @@ function Ask({ symbol, name }: { symbol: string; name: string }) {
   );
 }
 
-const NAV = [["verdict", "Verdict"], ["promises", "Promises"], ["saydo", "Say vs do"], ["numbers", "Numbers"], ["trajectory", "Trajectory"], ["balance", "Balance sheet"], ["cash", "Cash"], ["bullbear", "Bull / Bear"], ["ask", "Ask"]];
+const NAV = [["verdict", "Summary"], ["promises", "Guidance"], ["saydo", "By quarter"], ["numbers", "Business"], ["trajectory", "Growth"], ["balance", "Balance sheet"], ["cash", "Cash"], ["capital", "Capital allocation"], ["governance", "Annual report"], ["bullbear", "Bull and bear"], ["ask", "Ask"]];
 
 function Dossier({ d }: { d: any }) {
   const s = d.snapshot;
@@ -219,49 +215,48 @@ function Dossier({ d }: { d: any }) {
         </div>
       )}
       <div className="stages">
-        {(["numbers", "promises", "synthesis"] as const).map((k) => (
-          <div key={k} className={`stage ${d.stages?.[k]}`}><i />{k === "numbers" ? "Statements" : k === "promises" ? `Transcripts${d.transcripts ? ` (${d.transcripts.length})` : ""}` : "Synthesis"}</div>
+        {(["numbers", "promises", "annual_report", "synthesis"] as const).map((k) => (
+          <div key={k} className={`stage ${d.stages?.[k] || "done"}`}><i />{k === "numbers" ? "Statements" : k === "promises" ? `Calls${d.transcripts ? ` (${d.transcripts.length})` : ""}` : k === "annual_report" ? "Annual report" : "Summary"}</div>
         ))}
       </div>
       {d.status === "error" && <div className="err" style={{ marginTop: 12 }}>Research hit a snag: {d.error}</div>}
 
       <div className="secnav"><div className="chips">{NAV.map(([id, l]) => <button key={id} className="chip sm" onClick={() => go(id)}>{l}</button>)}</div></div>
 
-      <Section title="Verdict" id="verdict">
+      <Section title="What to watch" id="verdict">
         {syn ? (
           <div className="verdict">
-            <div className="muted" style={{ fontSize: 12 }}>The one thing to watch</div>
             <div className="q">{syn.verdict}</div>
             <Flags flags={d.flags.slice(0, 3)} />
           </div>
         ) : <div className="skeleton" style={{ height: 120 }} />}
       </Section>
 
-      <Section title="Promised vs delivered" id="promises" aside="from management's own words">
+      <Section title="Guidance against results" id="promises" aside="last four calls">
         {L ? <Promises L={L} /> : <div className="skeleton" style={{ height: 160 }} />}
       </Section>
 
-      <Section title="Say vs do, call by call" id="saydo">
+      <Section title="Calls and results by quarter" id="saydo">
         {L ? <SayDo L={L} /> : <div className="skeleton" style={{ height: 120 }} />}
         <div style={{ marginTop: 10 }}>{syn ? <Narrative items={syn.narrative} /> : L ? <Narrative items={L.narrative} /> : null}</div>
       </Section>
 
       {s && (
         <Section title="Business" id="numbers">
-          <div className="panel">
+          <div>
             <div className="about">{s.about.replace(/\s*\[\d+\]/g, "")}</div>
             {keyPoints.length > 0 && (
               <div style={{ marginTop: 10, fontSize: 13, color: "var(--text-2)" }}>
                 {keyPoints.slice(0, 10).map((k: string, i: number) => <div key={i} style={{ padding: "2px 0" }}>{k.replace(/^-\s*/, "· ").replace(/\s*\[\d+\]/g, "")}</div>)}
               </div>
             )}
-            <div className="faint" style={{ fontSize: 11.5, marginTop: 10 }}>Company description and segment mix as disclosed by the company.</div>
+            <div className="faint" style={{ fontSize: 11.5, marginTop: 10 }}>As described by the company in its filings and investor material.</div>
           </div>
         </Section>
       )}
 
       {tr && (
-        <Section title="Trajectory" id="trajectory" aside={`revenue CAGR 3y ${fmt.pct(tr.cagr.sales_3y, 0, false)} · 5y ${fmt.pct(tr.cagr.sales_5y, 0, false)}`}>
+        <Section title="Growth" id="trajectory" aside={`revenue CAGR 3y ${fmt.pct(tr.cagr.sales_3y, 0, false)} · 5y ${fmt.pct(tr.cagr.sales_5y, 0, false)}`}>
           <div className="panel">
             <BarLine labels={tr.years} bars={tr.sales} line={s?.lender ? undefined : tr.opm} fmtBar={(v) => fmt.cr(v).replace(" cr", "")} fmtLine={(v) => `${v}%`} />
             <div className="legend"><span><i style={{ background: "var(--line-2)" }} />Revenue (₹ cr)</span>{!s?.lender && <span><i style={{ background: "var(--accent)" }} />Operating margin</span>}</div>
@@ -302,24 +297,75 @@ function Dossier({ d }: { d: any }) {
         </Section>
       )}
 
-      <Section title="Bull vs bear" id="bullbear" aside={syn?.mode === "rules" ? "from the flags above" : syn ? "model-written, fact-checked" : ""}>
+      {d.capital && (
+        <Section title="Capital allocation" id="capital" aside={d.capital.years}>
+          <div className="panel">
+            {d.capital.uses?.length ? (
+              <>
+                <p className="lede" style={{ marginTop: 10 }}>Of {fmt.cr(d.capital.generated)} of operating cash generated, this is where it went.</p>
+                <div className="alloc">
+                  {d.capital.uses.map((u: any) => (
+                    <div className="alloc-row" key={u.label}>
+                      <span>{u.label === "Net debt repaid" && u.amount < 0 ? "Net new borrowing (added)" : u.label}</span>
+                      <span className="alloc-bar"><i style={{ width: `${Math.min(100, Math.abs(u.pct))}%`, background: u.amount < 0 ? "var(--flag)" : undefined }} /></span>
+                      <span className="num" style={{ textAlign: "right" }}>{Math.abs(u.pct)}%</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>Shares of five years' operating cash flow, from the filed cash-flow statements. The remainder went to cash, investments and other items.</div>
+              </>
+            ) : <p className="lede" style={{ marginTop: 10 }}>{d.capital.note}</p>}
+            <Flags flags={d.flags} section="capital" />
+          </div>
+        </Section>
+      )}
+
+      {(d.governance || d.stages?.annual_report === "running") && (
+        <Section title="From the annual report" id="governance" aside={d.governance?.year ? `${d.governance.year}, ${d.governance.pages} pages read` : "reading…"}>
+          {!d.governance ? <div className="skeleton" style={{ height: 100 }} /> : d.governance.error ? <p className="lede" style={{ marginTop: 10 }}>{d.governance.error}</p> : (
+            <div>
+              {d.governance.auditor?.found && (
+                <div className="kv" style={{ marginTop: 8 }}>
+                  <span className="muted">Auditor</span>
+                  <span>{d.governance.auditor.firm || "Named in the report"}, {d.governance.auditor.key_audit_matters} key audit matters · <a className="link" href={`${d.governance.url}#page=${d.governance.auditor.page}`} target="_blank" rel="noreferrer">p.{d.governance.auditor.page}</a></span>
+                </div>
+              )}
+              <Flags flags={d.flags} section="governance" />
+              {d.governance.related_party && (
+                <div style={{ paddingTop: 10 }}>
+                  <div className="muted" style={{ fontSize: 12 }}>Related-party transactions, as stated in the report (<a className="link" href={`${d.governance.url}#page=${d.governance.related_party.page}`} target="_blank" rel="noreferrer">p.{d.governance.related_party.page}</a>)</div>
+                  <div className="excerpt">{d.governance.related_party.text}</div>
+                </div>
+              )}
+              {d.governance.contingent && (
+                <div style={{ paddingTop: 10 }}>
+                  <div className="muted" style={{ fontSize: 12 }}>Contingent liabilities note (<a className="link" href={`${d.governance.url}#page=${d.governance.contingent.page}`} target="_blank" rel="noreferrer">p.{d.governance.contingent.page}</a>)</div>
+                  <div className="excerpt">{d.governance.contingent.text.slice(0, 420)}…</div>
+                </div>
+              )}
+            </div>
+          )}
+        </Section>
+      )}
+
+      <Section title="Bull and bear case" id="bullbear" aside={syn?.mode === "rules" ? "from the flags above" : syn ? "written from the figures above" : ""}>
         {syn ? (
           <div className="bb">
-            <div className="panel"><h4 className="up">Bull</h4><ul>{syn.bull.map((b: any, i: number) => <li key={i}>{b.text}</li>)}</ul></div>
-            <div className="panel"><h4 className="down">Bear</h4><ul>{syn.bear.length ? syn.bear.map((b: any, i: number) => <li key={i}>{b.text}</li>) : <li className="muted">No red flags from the statements or the calls.</li>}</ul></div>
+            <div><h4 className="up">Bull</h4><ul>{syn.bull.map((b: any, i: number) => <li key={i}>{b.text}</li>)}</ul></div>
+            <div><h4 className="down">Bear</h4><ul>{syn.bear.length ? syn.bear.map((b: any, i: number) => <li key={i}>{b.text}</li>) : <li className="muted">Nothing negative in the statements or the calls.</li>}</ul></div>
           </div>
         ) : <div className="skeleton" style={{ height: 140 }} />}
       </Section>
 
-      <Section title="Ask the transcripts" id="ask">
+      <Section title="Ask about the calls" id="ask">
         <Ask symbol={d.symbol} name={s?.name || d.symbol} />
       </Section>
 
       <div className="foot">
-        Primary sources only: filed statements and {d.transcripts?.length || 0} earnings-call transcripts
+        Sources: filed statements and {d.transcripts?.length || 0} earnings-call transcripts
         {d.transcripts?.length ? <> ({d.transcripts.map((t: any, i: number) => <span key={t.url}>{i ? ", " : ""}<a href={t.url} target="_blank" rel="noreferrer">{t.label}</a></span>)})</> : null}
         {s?.documents?.annual_reports?.[0] && <> · <a href={s.documents.annual_reports[0].url} target="_blank" rel="noreferrer">Annual report {s.documents.annual_reports[0].year}</a></>}.
-        <br />No news, no broker notes. {d.llm?.provider ? `Models: ${d.llm.cheap} for extraction, ${d.llm.strong} for synthesis.` : "Running rules-only (no model configured)."}
+        <br />No news or broker reports are used. {d.llm?.provider ? `Models: ${d.llm.cheap} for extraction, ${d.llm.strong} for the summary.` : "No language model is configured, so extraction is rule-based."}
       </div>
     </>
   );
@@ -368,7 +414,7 @@ export default function Research({ symbol, setSymbol, demo, book }: { symbol: st
           <div className="suggest">
             {sug.map((s) => (
               <button key={s.symbol} onClick={() => { setSymbol(s.symbol); setQ(""); setSug([]); }}>
-                <span className="tick">{s.symbol}</span><span>{s.name}</span>
+                <span className="sym">{s.symbol}</span><span>{s.name}</span>
               </button>
             ))}
           </div>
@@ -377,15 +423,13 @@ export default function Research({ symbol, setSymbol, demo, book }: { symbol: st
 
       {!symbol && (
         <>
-          <h1 className="headline" style={{ marginTop: 18 }}>Don't summarise management. <em>Audit them.</em></h1>
-          <div className="muted" style={{ fontSize: 14, margin: "-4px 2px 0" }}>
-            FINN reads the last four earnings calls, pulls out every number management committed to, and checks it against what the filed results later showed. Primary sources only.
-          </div>
-          <Section title="Try">
-            <div className="routine">{demo.map((s) => <button key={s} className="chip" onClick={() => setSymbol(s)}>{s}</button>)}</div>
+          <h1 className="page-title">Research</h1>
+          <p className="lede">Search any NSE-listed company. FINN reads its last four earnings calls, picks out the guidance management gave, and checks it against the results filed afterwards. It uses only the company's own filings and transcripts.</p>
+          <Section title="Outside the portfolio">
+            <div className="tags" style={{ paddingTop: 12 }}>{demo.map((s) => <button key={s} className="tag" onClick={() => setSymbol(s)}>{s}</button>)}</div>
           </Section>
-          <Section title="From your book">
-            <div className="routine">{book.map((p) => <button key={p.symbol} className="chip sm" onClick={() => setSymbol(p.symbol)}>{p.symbol}</button>)}</div>
+          <Section title="In the portfolio">
+            <div className="tags" style={{ paddingTop: 12 }}>{book.map((p) => <button key={p.symbol} className="tag" onClick={() => setSymbol(p.symbol)}>{p.symbol}</button>)}</div>
           </Section>
         </>
       )}
@@ -393,7 +437,7 @@ export default function Research({ symbol, setSymbol, demo, book }: { symbol: st
       {symbol && err && (
         <div style={{ marginTop: 16 }}>
           <div className="err">{err}</div>
-          <button className="act" onClick={() => setSymbol(null)} style={{ marginTop: 8 }}>← Back</button>
+          <button className="act primary" onClick={() => setSymbol(null)} style={{ marginTop: 8 }}>Back to research</button>
         </div>
       )}
       {symbol && !err && !d && (<><div className="skeleton" style={{ height: 160, marginTop: 10 }} /><div className="skeleton" style={{ height: 220, marginTop: 12 }} /></>)}

@@ -91,6 +91,7 @@ def _enrich(item, symbol, name):
                 card = None
         if card:
             item["results"] = card
+            item["guidance_check"] = guidance_check(symbol, card)
             if card.get("headline"):
                 item["oneliner"] = f"{card['period']}: {card['headline']}"
     elif cat == "management_change" and item["score"] >= 60:
@@ -112,6 +113,63 @@ def _enrich(item, symbol, name):
                 bits.append("Out: " + ", ".join(p["name"] for p in outs))
             if bits:
                 item["oneliner"] = " · ".join(bits)
+
+
+def guidance_check(symbol, card):
+    """Hold this quarter's numbers up against what management last guided for the year.
+    Uses the promise ledger from the research dossier, so push and pull share one memory."""
+    doc = store.kv_get("research", symbol) or {}
+    rows = (doc.get("ledger") or {}).get("rows") or []
+    m = re.match(r"Q(\d) FY(\d\d)", card.get("period", ""))
+    if not m or not rows:
+        return []
+    fy = f"FY{m.group(2)}"
+    lines = {l["key"]: l for l in card["lines"]}
+    this = {"revenue_growth": lines.get("revenue", {}).get("yoy_pct"),
+            "ebitda_margin": (card.get("margins") or {}).get("ebitda_margin"),
+            "profit_growth": lines.get("pat", {}).get("yoy_pct")}
+    out, seen = [], set()
+    for r in rows:  # rows are newest call first, so the latest guidance wins
+        if r["metric"] not in this or this[r["metric"]] is None or r.get("low") is None or r["metric"] in seen:
+            continue
+        if not (r.get("period") or "").endswith(fy):
+            continue
+        seen.add(r["metric"])
+        v, lo, hi = this[r["metric"]], r["low"], r.get("high")
+        tol = 0.2 if r["metric"] == "ebitda_margin" else 0.5
+        status = "below" if v + tol < lo else "above" if hi is not None and v > hi + (0.5 if r["metric"] == "ebitda_margin" else 5) else "within"
+        target = f"{lo:g}%+" if hi is None else (f"{lo:g}%" if lo == hi else f"{lo:g}–{hi:g}%")
+        out.append({"metric": r["metric_label"], "actual": round(v, 1), "target": target, "period": r["period"],
+                    "said_in": r["said_in"], "status": status, "url": r["url"], "page": r["page"]})
+    return out
+
+
+DATE_RX = re.compile(r"(\d{1,2})(?:st|nd|rd|th)?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*,?\s+(20\d\d)"
+                     r"|(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d\d)", re.I)
+
+
+def upcoming(symbols=PORTFOLIO_SYMBOLS, days_back=45):
+    """Results dates announced by the portfolio, parsed from board-meeting intimations."""
+    today = datetime.now(nse.IST).date()
+    seen, out = set(), []
+    for f in store.filings_since(time.time() - days_back * 86400, set(symbols)):
+        sc = classify.score(f)
+        if sc["sub"] != "board_meeting_notice":
+            continue
+        text = f"{f.get('summary') or ''} {f['title']}"
+        for m in DATE_RX.finditer(text):
+            d, mon, y = (m.group(1), m.group(2), m.group(3)) if m.group(1) else (m.group(5), m.group(4), m.group(6))
+            try:
+                when = datetime.strptime(f"{d} {mon[:3].title()} {y}", "%d %b %Y").date()
+            except ValueError:
+                continue
+            if when >= today and f["symbol"] not in seen:
+                seen.add(f["symbol"])
+                _, _, name = _scale(f["symbol"])
+                out.append({"symbol": f["symbol"], "company": name, "date": when.isoformat(),
+                            "what": "Results" if re.search(r"result", text, re.I) else "Board meeting", "url": f["url"]})
+            break
+    return sorted(out, key=lambda x: x["date"])
 
 
 def build(hours=24, since=None, rules=None, muted=(), symbols=PORTFOLIO_SYMBOLS):
@@ -191,6 +249,7 @@ def build(hours=24, since=None, rules=None, muted=(), symbols=PORTFOLIO_SYMBOLS)
                    "market_today": feed.get(datetime.now(nse.IST).date().isoformat())},
         "needs_you": tiers["needs_you"], "worth_knowing": tiers["worth_knowing"],
         "routine": [{"label": k, "count": len(v), "items": v} for k, v in sorted(routine_groups.items(), key=lambda kv: -len(kv[1]))],
+        "upcoming": upcoming(symbols),
         "rules": rules,
     }
 
@@ -206,14 +265,34 @@ def holdings():
         if last:
             sc = classify.score(last[0])
             lf = {"title": clean_title(last[0]["title"]), "ts": last[0]["ts"], "category_label": classify.CATEGORY_LABEL[sc["category"]]}
-        out.append({"symbol": s, "name": name, "sector": p["sector"], "size": p["size"], "mcap": mcap, "eod": sm, "last_filing": lf})
+        out.append({"symbol": s, "name": name, "sector": p["sector"], "size": p["size"], "mcap": mcap, "eod": sm,
+                    "last_filing": lf, "quality": _quality(s)})
     return out
+
+
+def _quality(symbol):
+    """The questions a long-term owner asks, one row per holding, from the research dossier."""
+    doc = store.kv_get("research", symbol)
+    if not doc or doc.get("status") != "done":
+        return None
+    L = (doc.get("ledger") or {}).get("score") or {}
+    roce = [v for v in (doc.get("balance") or {}).get("roce", []) if v is not None]
+    prom = [v for v in ((doc.get("balance") or {}).get("promoter") or {}).get("values", []) if v is not None]
+    aud = ((doc.get("governance") or {}).get("auditor") or {})
+    return {
+        "guidance": f"{L['kept']}/{L['scored']}" if L.get("scored") else None,
+        "cfo_pat": (doc.get("cash") or {}).get("cfo_pat_5y"),
+        "roce": roce[-1] if roce else (doc.get("snapshot") or {}).get("roe"),
+        "audit": None if not aud.get("found") else ("clean" if aud["opinion"] == "unmodified" and not aud.get("emphasis_of_matter") else aud["opinion"]),
+        "promoter_chg": round(prom[-1] - prom[0], 1) if len(prom) >= 2 else None,
+        "lender": (doc.get("snapshot") or {}).get("lender"),
+    }
 
 
 def brief_script(d):
     """A ~60-second spoken brief, built from the digest (no model needed)."""
     n = d["counts"]
-    lines = [f"Here's your brief. {n['filings']} filings across your portfolio; {n['needs_you']} need you."]
+    lines = [f"Here's the note. {n['filings']} filings across the portfolio, {n['needs_you']} worth reading."]
     for it in d["needs_you"][:5]:
         co = it["company"].replace(" Ltd", "").replace(" Limited", "")
         if it["kind"] == "move":
@@ -227,5 +306,5 @@ def brief_script(d):
         else:
             lines.append(f"{co}: {it['title']}.")
     if n["routine"]:
-        lines.append(f"{n['routine']} routine filings were set aside.")
+        lines.append(f"{n['routine']} routine filings were left out.")
     return " ".join(lines)

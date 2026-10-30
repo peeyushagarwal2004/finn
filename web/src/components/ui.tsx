@@ -22,8 +22,7 @@ export function Delta({ v, d = 1, suffix = "" }: { v?: number | null; d?: number
   if (v === null || v === undefined || isNaN(v)) return <span className="faint">—</span>;
   return (
     <span className={`delta num ${v > 0 ? "up" : v < 0 ? "down" : "muted"}`}>
-      {v > 0 ? "▲" : v < 0 ? "▼" : ""} {Math.abs(v).toFixed(d)}
-      {suffix || "%"}
+      {v > 0 ? "+" : v < 0 ? "−" : ""}{Math.abs(v).toFixed(d)}{suffix || "%"}
     </span>
   );
 }
@@ -137,8 +136,8 @@ export function SwipeCard({ children, onDone, onMute, className = "" }: { childr
       onPointerUp={end}
       onPointerCancel={() => { setDx(0); start.current = null; locked.current = null; }}
     >
-      <div className="swipe-hint done" style={{ opacity: Math.min(1, Math.max(0, dx) / 90) }}>✓ Done</div>
-      <div className="swipe-hint mute" style={{ opacity: Math.min(1, Math.max(0, -dx) / 90) }}>Mute similar</div>
+      <div className="swipe-hint done" style={{ opacity: Math.min(1, Math.max(0, dx) / 90), transform: `translateX(${-Math.min(dx, 90)}px)` }}>Read</div>
+      <div className="swipe-hint mute" style={{ opacity: Math.min(1, Math.max(0, -dx) / 90), transform: `translateX(${Math.min(-dx, 90)}px)` }}>Mute</div>
       {children}
     </div>
   );
@@ -159,6 +158,7 @@ export const Icon = {
   check: () => (<svg {...P} width={15} height={15}><path d="m5 12 5 5 9-10" /></svg>),
   mute: () => (<svg {...P} width={15} height={15}><path d="M4 9h4l5-4v14l-5-4H4zM17 9l4 6M21 9l-4 6" /></svg>),
   arrow: () => (<svg {...P} width={15} height={15}><path d="M5 12h14M13 6l6 6-6 6" /></svg>),
+  info: () => (<svg {...P}><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7.5v.01" /></svg>),
   refresh: () => (<svg {...P}><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" /></svg>),
 };
 

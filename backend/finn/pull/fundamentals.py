@@ -121,8 +121,37 @@ def analyse(symbol):
     cash_q["cfo_pat_5y"] = round(sum(c for c, _ in c5) / sum(p for _, p in c5), 2) if c5 and sum(p for _, p in c5) > 0 else None
 
     out = {"snapshot": snapshot, "trajectory": trajectory, "balance": balance, "cash": cash_q}
+    out["capital"] = None if lender else capital_allocation(co, cf_h, cfo)
     out["flags"] = flags(out, oi=oi, pbt=pbt, lender=lender)
     return out
+
+
+def capital_allocation(co, years, cfo, n=5):
+    """Where the last n years of operating cash went, from the filed cash-flow statements."""
+    if not co.get("company_id") or len(years) < 2:
+        return None
+    cons = co.get("basis") == "consolidated"
+    inv = screener.schedule(co["company_id"], "Cash from Investing Activity", "cash-flow", cons)
+    fin = screener.schedule(co["company_id"], "Cash from Financing Activity", "cash-flow", cons)
+    ys = years[-n:]
+
+    def tot(sched, *names):
+        return -sum((sched.get(nm) or {}).get(y) or 0 for nm in names for y in ys)
+
+    generated = sum(v or 0 for v in cfo[-n:])
+    label = f"{ys[0].replace('Mar 20', 'FY')}–{ys[-1].replace('Mar 20', 'FY')}"
+    if generated <= 0:
+        return {"years": label, "generated": round(generated), "uses": [],
+                "note": f"Operating cash flow was negative in total over {label}: the business consumed cash rather than generating it."}
+    uses = [
+        ("Capex", tot(inv, "Fixed assets purchased") - (-tot(inv, "Fixed assets sold"))),
+        ("Acquisitions and subsidiaries", tot(inv, "Acquisition of companies", "Invest in subsidiaries", "Investment in group cos")),
+        ("Dividends", tot(fin, "Dividends paid")),
+        ("Interest", tot(fin, "Interest paid fin")),
+        ("Net debt repaid", tot(fin, "Repayment of borrowings", "Proceeds from borrowings")),
+    ]
+    rows = [{"label": l, "amount": round(v), "pct": round(100 * v / generated)} for l, v in uses]
+    return {"years": label, "generated": round(generated), "uses": rows}
 
 
 def _f(fid, tone, title, detail, section):
@@ -195,6 +224,23 @@ def flags(a, oi, pbt, lender):
     if oi_l[0] and pbt_l[0] and pbt_l[0] > 0 and oi_l[0] / pbt_l[0] > 0.25:
         F.append(_f("other_income", "watch", "Profit leans on other income",
                     f"Other income was {100 * oi_l[0] / pbt_l[0]:.0f}% of pre-tax profit last year.", "trajectory"))
+    cap = a.get("capital")
+    if cap and cap.get("note"):
+        F.append(_f("cfo_negative", "neg", "The business consumed cash over five years", cap["note"], "capital"))
+    if cap and cap.get("uses"):
+        u = {r["label"]: r for r in cap["uses"]}
+        if u["Acquisitions and subsidiaries"]["pct"] >= 30:
+            F.append(_f("acq_heavy", "watch", f"{u['Acquisitions and subsidiaries']['pct']}% of operating cash went into acquisitions",
+                        f"Over {cap['years']}. Acquisitions are where capital is most often destroyed; check what they've earned.", "capital"))
+        if u["Dividends"]["pct"] >= 50:
+            F.append(_f("payout_high", "pos", f"{u['Dividends']['pct']}% of operating cash paid out as dividends",
+                        f"Over {cap['years']}. A business that doesn't need its cash to grow.", "capital"))
+        if u["Capex"]["pct"] >= 70:
+            F.append(_f("capex_heavy", "watch", f"Capex absorbed {u['Capex']['pct']}% of operating cash",
+                        f"Over {cap['years']}. Growth is capital-hungry; watch whether returns hold up.", "capital"))
+        if u["Net debt repaid"]["pct"] <= -30:
+            F.append(_f("borrowed", "watch", "Borrowing funded part of the spending",
+                        f"Net new borrowing equal to {-u['Net debt repaid']['pct']}% of operating cash over {cap['years']}.", "capital"))
     pr = [v for v in bal["promoter"]["values"] if v is not None]
     if len(pr) >= 2 and abs(pr[-1] - pr[0]) >= 1.5:
         F.append(_f("promoter", "pos" if pr[-1] > pr[0] else "watch", f"Promoter stake {'up' if pr[-1] > pr[0] else 'down'} {abs(pr[-1] - pr[0]):.1f} pts",

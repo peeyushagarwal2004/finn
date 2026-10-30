@@ -109,7 +109,12 @@ def _wikipedia(name, company):
     return None
 
 
-BIO_PROMPT = """From the text below (a stock-exchange filing about {name}), extract a compact career profile.
+BACKGROUND_PROMPT = """{name} has just been appointed {role} at {company} (an Indian listed company).
+In two sentences, give their professional background: previous employers and roles. If you are not
+confident this is a person you know about, return {{"known": false}}.
+Return JSON: {{"known": true|false, "background": "..."}}"""
+
+BIO_PROMPT ="""From the text below (a stock-exchange filing about {name}), extract a compact career profile.
 Return JSON: {{"headline": "one line, e.g. 'ICICI veteran, ran ICICI Securities'", "previous": ["role, org", ...max 4],
 "education": "short or null", "years_experience": number or null}}. Use only the text. If the text has no
 profile, return {{"headline": null}}.
@@ -147,9 +152,16 @@ def enrich(filing, company_name):
                     w = _wikipedia(name, company_name)
                     if w:
                         prof.update(bio=w["text"], bio_source="wikipedia", bio_url=w["url"])
-                    elif ref:
+                    else:
+                        # the brief allows outside knowledge for push-side background; label it and allow "unknown"
+                        js = llm.ask_json(BACKGROUND_PROMPT.format(name=name, role=prof["role"] or "a senior role", company=company_name),
+                                          tier="strong", max_tokens=250,
+                                          system="You are careful about real people. Only state facts you are confident of. Reply with JSON only.")
+                        if isinstance(js, dict) and js.get("known") and js.get("background"):
+                            prof.update(bio=js["background"], bio_source="model")
+                    if not prof["bio"] and ref:
                         prof["bio_hint"] = f"Profile was filed with the exchange on {ref.group(1)}"
-            if prof["bio"] and prof["bio_source"] != "wikipedia":
+            if prof["bio"] and prof["bio_source"] in ("filing", "earlier filing"):
                 js = llm.ask_json(BIO_PROMPT.format(name=name, text=prof["bio"]), tier="cheap", max_tokens=300)
                 if isinstance(js, dict) and js.get("headline"):
                     prof["structured"] = js

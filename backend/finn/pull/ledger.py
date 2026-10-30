@@ -158,25 +158,26 @@ def narrative(rows, timeline):
         if r["verdict"] in ("unverifiable", "long_term", "pending") or r.get("actual") is None:
             continue
         stance = "agree" if r["verdict"] in ("delivered", "beat", "on_track", "ahead") else "diverge"
-        part = "so far " if r.get("reported", 0) < r.get("of", 0) else ""
+        partial = r.get("reported", 0) < r.get("of", 0)
+        result = (f"After {r['reported']} of {r['of']} quarters it is at {r['actual']:g}%." if partial
+                  else f"It came in at {r['actual']:g}%.")
         out.append({"stance": stance,
-                    "text": f"{r['said_in']}: guided {r['metric_label'].lower()} of {_fmt_target(r)} for {r['period']}; "
-                            f"{part}{r['actual']:g}% ({r['reported']}/{r['of']} quarters) → {r['verdict_label'].lower()}.",
-                    "evidence": f"{r['said_in']} transcript p.{r['page']}"})
+                    "text": f"In the {r['said_in']} call, management guided {r['metric_label'].lower()} of {_fmt_target(r)} for {r['period']}. {result}",
+                    "evidence": f"{r['said_in']} transcript, p.{r['page']}"})
     # tone vs. trend: management mood rising while growth falls (or vice versa) is the classic tell
     pts = [t for t in timeline if t["tone"] is not None and t["sales_yoy"] is not None]
     if len(pts) >= 3:
         dt = pts[-1]["tone"] - pts[0]["tone"]
         dg = pts[-1]["sales_yoy"] - pts[0]["sales_yoy"]
         if dt > 0.1 and dg < -3:
-            out.append({"stance": "diverge", "text": f"Tone brightened ({pts[0]['tone']:+.2f} → {pts[-1]['tone']:+.2f}) while revenue growth slowed "
-                        f"({pts[0]['sales_yoy']:.0f}% → {pts[-1]['sales_yoy']:.0f}% YoY) between {pts[0]['label']} and {pts[-1]['label']}.",
-                        "evidence": "Tone index across calls vs reported quarters"})
+            out.append({"stance": "diverge", "text": f"Management sounded more upbeat on the calls ({pts[0]['tone']:+.2f} to {pts[-1]['tone']:+.2f}) "
+                        f"while revenue growth slowed from {pts[0]['sales_yoy']:.0f}% to {pts[-1]['sales_yoy']:.0f}% between {pts[0]['label']} and {pts[-1]['label']}.",
+                        "evidence": "Tone of each call against that quarter's results"})
         elif dt < -0.1 and dg > 3:
-            out.append({"stance": "diverge", "text": f"Management sounded more cautious ({pts[0]['tone']:+.2f} → {pts[-1]['tone']:+.2f}) even as growth "
-                        f"improved ({pts[0]['sales_yoy']:.0f}% → {pts[-1]['sales_yoy']:.0f}% YoY) — under-promising?",
-                        "evidence": "Tone index across calls vs reported quarters"})
+            out.append({"stance": "diverge", "text": f"Management sounded more cautious ({pts[0]['tone']:+.2f} to {pts[-1]['tone']:+.2f}) "
+                        f"even though revenue growth picked up from {pts[0]['sales_yoy']:.0f}% to {pts[-1]['sales_yoy']:.0f}%. They may be setting expectations low.",
+                        "evidence": "Tone of each call against that quarter's results"})
         else:
-            out.append({"stance": "agree", "text": f"Management's tone moved in step with the numbers from {pts[0]['label']} to {pts[-1]['label']}.",
-                        "evidence": "Tone index across calls vs reported quarters"})
+            out.append({"stance": "agree", "text": f"Management's tone on the calls has tracked the reported numbers from {pts[0]['label']} to {pts[-1]['label']}.",
+                        "evidence": "Tone of each call against that quarter's results"})
     return out

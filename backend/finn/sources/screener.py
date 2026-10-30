@@ -14,8 +14,10 @@ BASE = "https://www.screener.in"
 
 def num(s):
     """'8,77,260' -> 877260.0 ; '26%' -> 26.0 ; '(19)' -> -19.0 ; '' -> None"""
-    if s is None:
+    if s is None or isinstance(s, (dict, list)):
         return None
+    if isinstance(s, (int, float)):
+        return float(s)
     s = s.replace("₹", "").replace("Cr.", "").replace("%", "").replace(",", "").strip()
     neg = s.startswith("(") and s.endswith(")")
     s = s.strip("()").strip()

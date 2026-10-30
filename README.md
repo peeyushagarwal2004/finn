@@ -1,101 +1,62 @@
-# FINN — Financial Investment Agent
+# FINN
 
-**A filter, not a feed.** FINN reads every exchange filing and end-of-day print across a portfolio and shows an investor only the few things that need them. When they want to go deeper, it *audits* management against their own words instead of summarising them.
+Live demo: https://finn-6xsx.onrender.com (best on a phone; the free server takes about 50 seconds to wake up if nobody has used it recently)
 
-**Live demo: https://finn-6xsx.onrender.com** (open on a phone; first load after idle takes ~50 s)
+FINN is my submission for the ENAM AI Engineer build challenge. It follows a portfolio of 18 NSE companies, reads every exchange filing and end-of-day price, and gives you a short note of what's worth reading. You can also research any NSE company, and it checks management's guidance on earnings calls against the results they reported later.
 
-Mobile-first web app (installable PWA) · Python/FastAPI backend · React frontend · runs fully without an LLM key, gets sharper with a free one.
+## What it does
 
----
+**Note (push).** A daily note for the portfolio, with a window you can change (since your last visit, today, 3 days, a week, a month). Each item is written as a headline, for example "L&T profit up 27%, margins narrow 130 bps" or "Kaynes falls 6.3% on 3.3x volume, no filing behind it". Below the headline is the detail that matters for that kind of filing:
 
-## The point of view
+- Results: revenue, EBITDA, PBT and PAT against last quarter and the same quarter last year, read from the results PDF filed with the exchange.
+- Management changes: who is joining and who is leaving, their roles, and a short background where one is available.
+- Price moves: the close, how heavy the volume was against the 20-day average, and whether any filing explains the move.
 
-Most investor tools compete on how much they show. FINN competes on how much it lets you **not read**.
+Less important filings get one line, and routine ones (trading window notices, ESOP allotments and so on) are grouped and counted at the bottom. You can swipe an item away once you've read it, or mute that kind of filing for that company. The play button reads the note aloud.
 
-| Interaction | Why |
-|---|---|
-| **The Brief is an inbox you clear, not a feed you scroll.** It opens on a funnel — *"41 filings → 9 need you"* — and every card can be swiped away (→ done) or used to train the filter (← *mute this kind of filing for this company*). | The goal state is *inbox zero*, and the product tells you what it set aside so you trust it. |
-| **Three tiers, three treatments.** *Needs you* gets a full card, *worth a glance* gets one line, *routine* collapses into a count per category. | Presentation cost should match materiality. A trading-window notice should never look like a CEO change. |
-| **Thresholds show their price before you set them.** Moving the volume slider instantly replays 90 sessions: *"these rules would have pinged you 7.5× a week."* | "Unusual" is the investor's call, so the app should show the trade-off between coverage and interruptions. |
-| **Moves are cross-examined against filings.** A 4% move with no disclosure behind it is flagged *unexplained* and ranked above one with an obvious driver. | The move nobody has explained yet is the one worth a call to IR. |
-| **Pull leads with a promise ledger, not a ratio wall.** Every number management committed to on the last four calls, checked against what the filed results later showed. | The brief's own example: the difference between summarising management and analysing them. |
-| **Push → Pull is one tap.** Every pushed item has *Dig in →* into research on that company. Research takes voice (*"KPIT"*), and the Brief can be **played as a 60-second audio briefing** for the commute. | An investor's day moves from "what changed?" to "what does it mean?" The two modes should feel like one product. |
+**Alerts.** You set a daily move threshold, a volume multiple, and optionally a volatility-adjusted threshold (a 3% move means something different for a small-cap than for a large bank). You also choose which filing types should trigger an alert. When you change a setting, the page shows how many alerts those rules would have produced over the last 90 trading days, so you can tune it before saving.
 
-## What's built
+**Research (pull).** Search any NSE company. FINN downloads its last four earnings call transcripts, finds the statements where management guided on revenue growth, margins or profit, and checks them against the quarters reported since. For example, it finds TCS guiding a 26-28% operating margin for FY27 when the first two quarters came in at 25.7%, and Astral guiding 20-25% growth for FY27 against 15.9% in the first quarter. Every statement links to the page of the transcript it came from.
 
-### Push
-- **Windowed digest**: *since your last visit* / 24h / 3d / 7d / 30d, across 18 NSE companies (mega-cap to small-cap, 14 sectors).
-- **Classification + materiality** of every filing into the brief's 17 categories, with the judgment written down as rules. Examples:
-  - A CFO or MD leaving scores 92; a company-secretary change scores 22.
-  - An order or capex is sized against annual revenue (*"₹1,200 cr ≈ 4.5% of revenue"*). An equity raise is sized against market cap (dilution). A penalty is too: *"Immaterial size (₹56 lakh)"* drops a DMart regulatory fine to *worth a glance*.
-  - "Board meeting to consider results" is a *calendar entry*, not results.
-  - NSE and BSE copies of the same filing, plus the result, deck and shareholder letter of one event, are merged into one card.
-- **Results cards**: Revenue, EBITDA, PBT, PAT with QoQ and YoY, **read from the exchange-filed results PDF**. SEBI's format puts this quarter, last quarter and the year-ago quarter in the first three columns, so a regex pass gets all three without a model. Every parsed row is reconciled against screener's standardised table. Rows that don't reconcile fall back individually, and the card says so. A model is used only when the regex can't place the numbers (scanned or columnar PDFs), and its output goes through the same gate. For lenders, EBITDA is replaced by NII, with a note explaining why.
-- **Management-change cards**: incoming and outgoing people with roles, extracted from the filing. The bio comes, in order of trust, from:
-  1. The SEBI-mandated profile inside the filing.
-  2. An earlier filing FINN has stored.
-  3. Wikipedia, accepted only if the article mentions the company or a business role, so a namesake never becomes your new CFO.
-  
-  When the filing only references an earlier intimation (as HDFC Bank's Oct 27 CEO handover does), the card says so honestly. LinkedIn is a one-tap search link rather than scraped, because its terms forbid scraping.
-- **Triggered alerts**: price ±X%, volume ×N vs the 20-day average, and a **volatility-adjusted σ lens** (a 3% day is noise for a small-cap and news for a bank), plus material filings in the categories you pick. A 90-session backtest prices each rule in pings per week. Notifications fire through the service worker while the app is open.
+The research page also covers the business description, multi-year growth, the balance sheet and working capital, cash conversion, a bull and bear case, and a question box that answers from the transcripts and annual report (typed or spoken).
 
-### Pull — works on any NSE ticker
-- **Promise ledger.** Guidance from the last four concall transcripts is checked against reported quarters:
-  - Each promise is a metric, a band and a period (*FY27*, *H2*, *Q3*).
-  - Verdicts: *Delivered / On track / Slightly behind / Missed / Not checkable*.
-  - Each promise carries a verbatim quote, the speaker and a page-linked source, and a credibility score sums them up.
-  
-  Examples from live data: TCS kept its 26–28% margin band in FY26 (27.1%) but is *slightly behind* in FY27 (25.7%). Astral guided 20% growth for FY26 and delivered 12.6%.
-- **Say vs do, call by call**: a deterministic *tone index* of management's own words next to that quarter's revenue and PAT growth. Divergence is called out (*"Tone brightened while revenue growth slowed"*).
-- **Business, trajectory, balance sheet, cash quality**: computed from filed statements, plus a rules engine of *flags*. Examples: "profits aren't turning into cash (CFO/PAT 0.6× over 5y)", "working capital stretched 25 days", "shareholders diluted (PAT CAGR ≫ EPS CAGR)", "promoter stake down 2.1 pts".
-- **Bull vs bear + verdict**, written by the strong model from a numbered fact sheet. Any point that doesn't cite a real fact id is dropped. Without a model, these come from the flags and the ledger.
-- **Ask the transcripts** (text or voice): BM25 retrieval picks ~6 passages, and the cheap model answers with `[n]` citations. Without a model, FINN quotes the passages verbatim rather than paraphrasing.
-- **Primary sources only**: filed statements, exchange filings and the company's own transcripts. No news, no broker notes, and prompts forbid outside knowledge.
+From what I could find about how ENAM invests, the screens that matter are governance, capital allocation, return ratios, cash generation and promoter integrity, held over long periods. So I added three things aimed at those questions:
 
-## Architecture
+- Annual report checks. FINN reads the latest annual report (300 to 600 pages, about 20 seconds) and pulls out the auditor's opinion and firm, emphasis-of-matter or going-concern language, the number of key audit matters, the board's statement on related-party transactions, and the contingent liabilities note. Each finding is quoted with a page link rather than summarised.
+- Capital allocation. Where five years of operating cash went: capex, acquisitions, dividends, interest and borrowing, from the filed cash-flow statements. For example, TCS paid out 72% as dividends, while Dixon put 75% into capex and 17% into acquisitions.
+- Owner's checklist. On the portfolio screen, one table for all 18 holdings: guidance kept, five-year cash conversion, ROCE, audit opinion and the change in promoter stake.
 
-```
-            ┌──────────── sources (polite, cached) ───────────┐
-NSE RSS ───►│ nse.py      poll every 5 min, keep history      │
-Yahoo  ────►│ prices.py   EOD, drops unfinished session       │──► SQLite (one file):
-screener ──►│ screener.py statements, filings, doc links      │    http/pdf/LLM caches,
-BSE PDFs ──►│ pdf.py      text per page, cached forever       │    filings, dossiers
-            └─────────────────────────────────────────────────┘
-                    │                              │
-        push/                                pull/
-        classify.py  rules → category+score  fundamentals.py  statements → flags
-        results.py   filing → QoQ/YoY        guidance.py      transcript → promises
-        people.py    filing → who/bio        ledger.py        promises × quarters
-        alerts.py    rules + backtest        research.py      staged job + synthesis
-        digest.py    rank, dedupe, enrich    ask.py           BM25 + cited answer
-                    │                              │
-                    └──────── api.py (FastAPI) ────┘──► React PWA (web/)
-```
+Push and pull share the same record of guidance. When a company reports results, the results card checks the quarter against what management guided on its last call (for example, TCS's Q2 margin of 25.7% against the 26-28% it guided for FY27). The note also lists upcoming results dates, parsed from the board-meeting notices companies file. A "How FINN works" page in the app shows how many filings, PDF pages, calls and annual reports it has read, and what the model calls have cost.
 
-### Model routing and cost
+## How it works
 
-| Step | Default | Model? |
-|---|---|---|
-| Classify & score ~all filings | rules | never |
-| Results headline numbers | regex on the filed PDF + reconciliation | cheap model only if regex fails, sees **one page** |
-| Management bio | filing text → structured | cheap |
-| Guidance extraction | rules pre-filter a 50-page call to ~25 sentences | cheap model *labels sentence ids*; quotes stay verbatim |
-| Narrative vs numbers, bull/bear | rules | **strong** model, one call per company, citations enforced |
-| Ask | BM25 → 6 passages | cheap |
+The backend is Python with FastAPI. The frontend is React, built as an installable web app and served by the same process. Everything is cached in one SQLite file.
 
-- Every model answer is cached by `sha256(model + prompt)`, and filings are immutable, so a company costs model calls **once**.
-- The pre-filter means the model reads ~3k tokens per call instead of ~60k.
-- A full dossier is ≈5 cheap calls + 1 strong call. On Gemini's free tier that's ₹0. At list price it's well under ₹1.
-- Free providers (Gemini, Groq, OpenRouter) are picked up automatically. A paid OpenAI key is used **only** with `FINN_LLM_PROVIDER=openai`, so a stray key in the environment never spends money.
-- `FINN_LLM_BASE_URL` points FINN at any OpenAI-compatible server, including a local Ollama.
+Data sources:
 
-### Robustness ("a demo that doesn't run is the worst outcome")
-- **No key**: the whole app still works on rules.
-- **Source down or IP-blocked**: stale cache is served. A gzipped seed snapshot (`seed/`) boots a fresh deploy with data. A nightly GitHub Action refreshes it after market close.
-- **Wrong is worse than empty**: unreconciled results numbers, implausible margin bands, uncited model claims and unquantified "promises" are all dropped rather than shown.
-- NSE/BSE APIs sit behind bot protection. FINN uses only their public RSS feed and public PDF archives, and doesn't try to get around the protection.
+- NSE's public announcements RSS feed, polled every 5 minutes. It only holds the last few hundred items and most of them are mutual fund NAV notices, so FINN stores what it sees to build its own history. NSE's and BSE's JSON APIs block automated requests and I didn't try to get around that.
+- screener.in for standardised financial statements and for links to the primary documents: results filings, annual reports and concall transcripts hosted on BSE.
+- Yahoo Finance (via yfinance) for end-of-day prices.
 
-## Run it
+I tried to use rules wherever a rule is good enough, and a language model only where it clearly helps:
+
+- Filing classification and importance scoring are rules. Exchange filing titles are formulaic, so a list of patterns covers nearly everything, and every score can be explained. The score also takes size into account: an order is compared with annual revenue, a share issue with market cap, and a penalty that's tiny relative to the company is marked immaterial.
+- Results numbers come from the filing PDF. Indian results tables list this quarter, the previous quarter and the year-ago quarter as their first three columns, so a regex can pick all three up. Every number is then checked against screener's standardised table, and anything that doesn't match is replaced with the standardised figure.
+- For transcripts, rules first cut a 50-page call down to about 25 forward-looking sentences from management. A small model then labels those sentences by id (metric, target range, period). Because the model only points at sentences, every quote shown in the app is exactly what was said.
+- One call to a larger model per company writes the bull and bear case from a numbered list of facts. Any point that doesn't cite one of those facts is dropped.
+- Model responses are cached by a hash of the prompt, so each company costs model calls only once.
+
+Without an API key the whole app still works, using rules for everything. With a free Gemini or Groq key, guidance extraction and the written summaries get noticeably better. FINN will only use a paid OpenAI key if `FINN_LLM_PROVIDER=openai` is set. `FINN_LLM_BASE_URL` can point it at any OpenAI-compatible server, including a local Ollama.
+
+## Things that went wrong along the way
+
+- My first classifier treated "board meeting to consider results" as a results announcement and attached the previous quarter's numbers to it. Those are now treated as calendar entries, and a results card is only attached if its quarter matches the filing date.
+- The same event often appears several times: once on NSE, once on BSE, and again as a results deck and a shareholder letter. I added a dedupe step that merges them into one item.
+- About half the results PDFs didn't parse with regex: some were scanned, some put labels and numbers on different lines, some had formula references like "(3+4)" in the row labels. That is where the model fallback is used, and it goes through the same check against reported totals.
+- The guidance parser read Pidilite's advertising spend ("3-5% of sales") as revenue growth, IndiGo's yield guidance as revenue growth, and a "16-17%" figure as a margin when it was something else. I added exclusions for cost ratios and unit metrics, and a check that throws out any margin target far from the company's actual margin level. A wrong verdict is worse than no verdict, so the rules leave out anything they can't place confidently.
+- HDFC Bank's CEO change filing didn't include the new CEO's profile; it referred to an earlier filing. Instead of guessing, the app says where the profile was filed and links a LinkedIn search.
+
+## Running it
 
 ```bash
 cd backend
@@ -107,24 +68,20 @@ cd ..
 uvicorn finn.api:app --app-dir backend --port 8000
 ```
 
-Open http://localhost:8000 on a phone-sized window, or add it to your home screen. For better extraction quality, optionally set a free key first:
+Then open http://localhost:8000. A compressed snapshot of the data is included in `seed/`, so the app has something to show even if a source is unreachable. A GitHub Action refreshes it each weekday after market close. To deploy, use `render.yaml` on Render or build the Dockerfile.
 
-```bash
-export GEMINI_API_KEY=...   # https://aistudio.google.com — free tier
-```
+## What I left out
 
-**Deploy**: `render.yaml` (Render free tier, Docker), or any container host: `docker build -t finn . && docker run -p 8000:8000 finn`.
+- Reading annual reports in depth. The financial statements come from filed numbers, and guidance is on the calls, so I prioritised transcripts. Annual reports are the obvious next source for the question box.
+- Scraping LinkedIn, which its terms don't allow.
+- User accounts. Alert rules, mutes and read status are stored on the device.
+- Intraday prices. The brief asked for end-of-day data.
+- Background push notifications when the app is closed. Notifications work while it is open or installed.
 
-## Deliberately left out
-- **Annual-report deep reading.** Statements come from filed numbers. Narrative grounding uses transcripts, which are where guidance lives. A 300-page AR is the next corpus for Ask (see below).
-- **LinkedIn scraping** (against its terms). Real background push uses the filing's mandated profile, Wikipedia, or a search link.
-- **Accounts and server-side state.** Rules, mutes and triage live on the device. That's right for a single-investor prototype and wrong for a team, which is next.
-- **Intraday data.** The brief specifies EOD, and pretending otherwise would be noise.
-- **True background web-push** (needs VAPID keys and a subscription store). Notifications work while the app is open or installed.
+## What I'd do next
 
-## Where it goes next
-1. **Team layer**: shared mutes and "who's on it" per card, so the inbox is cleared once per desk, not once per analyst.
-2. **Annual report and investor presentation** into the Ask index: segment tables, contingent liabilities, RPTs and auditor remarks as push flags.
-3. **Guidance memory across years**: a running ledger per company, so credibility becomes a time series and a screen ("show me managements that under-promise").
-4. **Learn the filter**: use swipe and mute history to re-weight materiality per investor.
-5. **Peer context on results**: *"margin −310 bps vs peers −80 bps"* turns a number into a judgment.
+- A shared view for a team, so that once one person has read an item it's marked for everyone.
+- Annual reports and investor presentations in the question box, plus alerts for things like auditor remarks, related-party transactions and contingent liabilities.
+- Keep the guidance record across years, so you can see which managements usually hit their numbers.
+- Use what people swipe away and mute to adjust the scoring.
+- Compare results with peers, e.g. a margin drop of 310 bps against a peer average of 80 bps.

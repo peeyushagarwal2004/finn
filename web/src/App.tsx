@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, prefs, Rules } from "./api";
+import About from "./components/About";
 import Alerts from "./components/Alerts";
 import Brief, { Win, windows } from "./components/Brief";
 import Holdings from "./components/Holdings";
 import Research from "./components/Research";
 import { Icon } from "./components/ui";
 
-type Tab = "brief" | "alerts" | "research" | "book";
+type Tab = "brief" | "alerts" | "research" | "book" | "about";
 
 // The previous visit defines "since you last looked"; this visit becomes the next one's anchor.
 const LAST_VISIT: number | null = prefs.read<number | null>("lastVisit", null);
@@ -20,7 +21,7 @@ export default function App() {
   const wins = useMemo(() => windows(LAST_VISIT), []);
   const [win, setWin] = useState<Win>(wins.find((w) => w.key === "24") || wins[0]);
   const [symbol, setSymbol] = useState<string | null>(null);
-  const [theme, setTheme] = useState<string>(() => prefs.read("theme", matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"));
+  const [theme, setTheme] = useState<string>(() => prefs.read("theme", "light"));
   const [speaking, setSpeaking] = useState(false);
   const [needCount, setNeedCount] = useState(0);
   const [toast, setToast] = useState<{ msg: string; undo?: () => void } | null>(null);
@@ -28,17 +29,17 @@ export default function App() {
   const toastT = useRef<number>();
 
   useEffect(() => { api.meta().then((m) => { setMeta(m); if (!rules) setRulesState(m.default_rules); }); }, []);
-  useEffect(() => { document.documentElement.dataset.theme = theme; prefs.write("theme", theme); document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f4f2ec" : "#0d0e10"); }, [theme]);
+  useEffect(() => { document.documentElement.dataset.theme = theme; prefs.write("theme", theme); document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f6f2ea" : "#121211"); }, [theme]);
   useEffect(() => { if (location.hash.slice(1) !== tab) location.hash = tab; window.scrollTo({ top: 0 }); }, [tab]);
   useEffect(() => {
-    const f = () => { const h = location.hash.slice(1) as Tab; if (["brief", "alerts", "research", "book"].includes(h)) setTab(h); };
+    const f = () => { const h = location.hash.slice(1) as Tab; if (["brief", "alerts", "research", "book", "about"].includes(h)) setTab(h); };
     addEventListener("hashchange", f);
     return () => removeEventListener("hashchange", f);
   }, []);
   useEffect(() => { const f = () => setScrolled(window.scrollY > 8); addEventListener("scroll", f, { passive: true }); return () => removeEventListener("scroll", f); }, []);
   useEffect(() => { if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {}); }, []);
 
-  const setRules = (r: Rules) => { setRulesState(r); prefs.write("rules", r); flash("Rules saved — FINN is watching"); };
+  const setRules = (r: Rules) => { setRulesState(r); prefs.write("rules", r); flash("Alert rules saved"); };
   const setMuted = (m: string[]) => { setMutedState(m); prefs.write("muted", m); };
   const flash = (msg: string, undo?: () => void) => {
     setToast({ msg, undo });
@@ -70,7 +71,7 @@ export default function App() {
 
   const listen = () => {
     if (speaking) { speechSynthesis.cancel(); setSpeaking(false); return; }
-    if (!("speechSynthesis" in window)) return flash("Audio brief isn't supported in this browser");
+    if (!("speechSynthesis" in window)) return flash("This browser can't read the note aloud");
     setSpeaking(true);
     api.brief({ hours: win.hours, since: win.since, rules: rules || undefined, muted }).then(({ script }) => {
       const u = new SpeechSynthesisUtterance(script);
@@ -87,26 +88,28 @@ export default function App() {
   return (
     <div className="app">
       <header className={`topbar ${scrolled ? "scrolled" : ""}`}>
-        <div className="brand"><b>F<i>I</i>NN</b><span>{tab === "research" && symbol ? <button onClick={() => setSymbol(null)} className="muted">← research</button> : "your filter on the market"}</span></div>
+        <span className="brand">FINN</span>{tab === "research" && symbol && <button onClick={() => setSymbol(null)} className="brand-sub">← All research</button>}
         <div className="top-actions">
-          <button className={`icon-btn ${speaking ? "on" : ""}`} onClick={listen} aria-label={speaking ? "Stop audio brief" : "Play audio brief"} title="Listen to your brief">{speaking ? <Icon.stop /> : <Icon.play />}</button>
+          <button className={`icon-btn ${speaking ? "on" : ""}`} onClick={listen} aria-label={speaking ? "Stop reading" : "Read the note aloud"} title="Read the note aloud">{speaking ? <Icon.stop /> : <Icon.play />}</button>
+          <button className={`icon-btn ${tab === "about" ? "on" : ""}`} onClick={() => setTab("about")} aria-label="How FINN works" title="How FINN works"><Icon.info /></button>
           <button className="icon-btn" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label="Toggle theme">{theme === "dark" ? <Icon.sun /> : <Icon.moon />}</button>
         </div>
       </header>
       {speaking && (
-        <div className="player"><span className="wave"><i /><i /><i /><i /></span>Playing your {win.label.toLowerCase()} brief<span className="spacer" /><button onClick={listen}>Stop</button></div>
+        <div className="player">Reading the note aloud ({win.label.toLowerCase()})<span className="spacer" /><button onClick={listen}>Stop</button></div>
       )}
 
       {tab === "brief" && <Brief win={win} setWin={setWin} wins={wins} rules={rules} muted={muted} setMuted={setMuted} onDig={dig} onCount={setNeedCount} flash={flash} />}
       {tab === "alerts" && <Alerts rules={rules} setRules={setRules} onDig={dig} />}
       {tab === "research" && <Research symbol={symbol} setSymbol={setSymbol} demo={meta?.research_demo || []} book={meta?.portfolio || []} />}
       {tab === "book" && <Holdings onDig={dig} />}
+      {tab === "about" && <About />}
 
       {tab !== "research" && (
         <div className="foot">
-          Data: NSE/BSE filings, Yahoo Finance EOD, company statements via screener.in.<br />
+          Sources: NSE/BSE filings, Yahoo Finance end-of-day prices, company statements via screener.in.<br />
           {meta?.last_refresh ? `Refreshed ${new Date(meta.last_refresh.ts * 1000).toLocaleString("en-IN", { hour: "numeric", minute: "2-digit", day: "numeric", month: "short" })}` : ""}
-          {meta?.llm?.provider ? ` · models: ${meta.llm.cheap} / ${meta.llm.strong}` : " · rules-only mode"}
+          {meta?.llm?.provider ? ` · models: ${meta.llm.cheap} / ${meta.llm.strong}` : " · no language model configured"}
         </div>
       )}
 
@@ -115,7 +118,7 @@ export default function App() {
       )}
 
       <nav className="tabbar">
-        {([["brief", "Brief", Icon.brief], ["alerts", "Alerts", Icon.bell], ["research", "Research", Icon.search], ["book", "Book", Icon.book]] as const).map(([k, l, I]) => (
+        {([["brief", "Note", Icon.brief], ["alerts", "Alerts", Icon.bell], ["research", "Research", Icon.search], ["book", "Portfolio", Icon.book]] as const).map(([k, l, I]) => (
           <button key={k} className={`tab ${tab === k ? "active" : ""}`} onClick={() => setTab(k as Tab)}>
             <I />{l}{k === "brief" && needCount > 0 && <span className="badge">{needCount}</span>}
           </button>
