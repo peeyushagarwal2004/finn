@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, Rules } from "../api";
+import { api, Rules, syncPush } from "../api";
 import { fmt, Section } from "./ui";
 import { headlineFor } from "./Cards";
 
@@ -9,11 +9,13 @@ const CATS: [string, string][] = [
   ["bonus_split", "Bonus / split"], ["insider_trading", "Insider trades"], ["dividend", "Dividends"], ["press_release", "Orders / PR"],
 ];
 
-export default function Alerts({ rules, setRules, onDig }: { rules: Rules; setRules: (r: Rules) => void; onDig: (s: string) => void }) {
+export default function Alerts({ rules, setRules, onDig, muted, pushState, setPushState }: {
+  rules: Rules; setRules: (r: Rules) => void; onDig: (s: string) => void; muted: string[]; pushState: string; setPushState: (s: string) => void;
+}) {
   const [draft, setDraft] = useState<Rules>(rules);
   const [bt, setBt] = useState<any>(null);
   const [live, setLive] = useState<any[] | null>(null);
-  const [perm, setPerm] = useState<string>(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+  const [busy, setBusy] = useState(false);
   const t = useRef<number>();
 
   useEffect(() => setDraft(rules), [rules]);
@@ -109,11 +111,15 @@ export default function Alerts({ rules, setRules, onDig }: { rules: Rules; setRu
           <div style={{ flex: 1, fontSize: 13.5 }}>
             <b>Notifications</b>
             <div className="muted" style={{ fontSize: 12.5 }}>
-              {perm === "granted" ? "On. While FINN is open it checks every 5 minutes and notifies you of new alerts." : perm === "denied" ? "Blocked in browser settings." : perm === "unsupported" ? "Not supported in this browser. Try adding FINN to your home screen." : "Get notified when a rule is triggered."}
+              {pushState === "on" ? "On for this device. FINN checks every 10 minutes and notifies you even when the app is closed."
+                : pushState === "denied" ? "Blocked in this browser's settings. Allow notifications for this site to turn them on."
+                : pushState === "unsupported" ? "This browser can't receive background notifications. On iPhone, add FINN to your home screen first (Share, then Add to Home Screen)."
+                : pushState === "not-configured" ? "Background notifications aren't set up on this server, so FINN will only notify you while it's open."
+                : "Get notified when a rule is triggered, even when the app is closed."}
             </div>
           </div>
-          {perm === "default" && (
-            <button className="btn" onClick={() => Notification.requestPermission().then(setPerm)}>Enable</button>
+          {pushState !== "on" && pushState !== "unsupported" && (
+            <button className="btn" disabled={busy} onClick={() => { setBusy(true); syncPush(rules, muted, true).then(setPushState).catch(() => setPushState("off")).finally(() => setBusy(false)); }}>{busy ? "…" : "Turn on"}</button>
           )}
         </div>
       </Section>

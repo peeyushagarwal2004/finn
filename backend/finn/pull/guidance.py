@@ -327,7 +327,8 @@ def _extract_one(co, c):
                 continue
             metric = it.get("metric") if it.get("metric") in METRIC_LABEL else cand["metric_hint"]
             promises.append({**cand, "metric": metric, "low": it.get("low"), "high": it.get("high"), "unit": it.get("unit"),
-                             "period": it.get("period") or _period(cand["text"], q, fy), "explicit": bool(it.get("explicit")),
+                             "period": it.get("period") or _period(cand["text"], q, fy) or (f"FY{str(fy)[-2:]}" if metric in CHECKABLE else None),
+                             "explicit": bool(it.get("explicit")),
                              "summary": it.get("summary")})
     else:
         base["method"] = "rules"

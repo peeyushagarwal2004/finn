@@ -20,8 +20,11 @@ import requests
 from . import store
 
 PROVIDERS = {
+    # Gemini 2.5 is closed to new keys. 3.5 Flash is a reasoning model: low effort is fast enough for
+    # bulk labelling (~3 s), and the one synthesis call per company gets more room to think.
     "gemini": {"key": "GEMINI_API_KEY", "base": "https://generativelanguage.googleapis.com/v1beta/openai",
-               "cheap": "gemini-2.5-flash-lite", "strong": "gemini-2.5-flash", "free": True},
+               "cheap": "gemini-3.5-flash", "strong": "gemini-3.5-flash", "free": True,
+               "effort": {"cheap": "low", "strong": "medium"}},
     "groq": {"key": "GROQ_API_KEY", "base": "https://api.groq.com/openai/v1",
              "cheap": "llama-3.1-8b-instant", "strong": "llama-3.3-70b-versatile", "free": True},
     "openrouter": {"key": "OPENROUTER_API_KEY", "base": "https://openrouter.ai/api/v1",
@@ -70,7 +73,10 @@ def _extract_json(text):
         return json.loads(text)
     except json.JSONDecodeError:
         m = re.search(r"[\[{].*[\]}]", text, re.S)
-        return json.loads(m.group(0)) if m else None
+        try:
+            return json.loads(m.group(0)) if m else None
+        except json.JSONDecodeError:
+            return None  # malformed or truncated: the caller falls back to rules
 
 
 def ask_json(prompt, tier="cheap", system=None, max_tokens=1500):
@@ -90,19 +96,26 @@ def ask_json(prompt, tier="cheap", system=None, max_tokens=1500):
     body = {"model": model, "temperature": 0.1, "max_tokens": max_tokens,
             "messages": [{"role": "system", "content": sys_msg}, {"role": "user", "content": prompt}],
             "response_format": {"type": "json_object"}}
-    for attempt in range(3):
+    effort = os.environ.get(f"FINN_{tier.upper()}_EFFORT") or (p.get("effort") or {}).get(tier)
+    if effort:
+        body["reasoning_effort"] = effort
+        body["max_tokens"] = max_tokens + (6000 if effort != "low" else 1500)  # thinking tokens count against the limit
+    for attempt in range(5):
         try:
             r = requests.post(f"{p['base']}/chat/completions", json=body, timeout=90,
                               headers={"Authorization": f"Bearer {os.environ.get(p['key'], 'none')}"})
         except requests.RequestException:
             time.sleep(2 * (attempt + 1))
             continue
-        if r.status_code == 429:  # free-tier rate limit: back off and retry
-            time.sleep(4 * (attempt + 1))
+        if r.status_code in (429, 503):  # free-tier rate limit or "high demand": back off and retry
+            time.sleep(6 * (attempt + 1))
             continue
         if r.status_code != 200:
             return None
         data = r.json()
+        if (data.get("choices") or [{}])[0].get("finish_reason") == "length" and attempt < 2:
+            body["max_tokens"] *= 2  # ran out of room while thinking: give it more and ask again
+            continue
         out = _extract_json(data["choices"][0]["message"]["content"] or "")
         u = data.get("usage") or {}
         ti, to = u.get("prompt_tokens", 0), u.get("completion_tokens", 0)

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, prefs, Rules } from "./api";
+import { api, prefs, Rules, syncPush } from "./api";
 import About from "./components/About";
 import Alerts from "./components/Alerts";
 import Brief, { Win, windows } from "./components/Brief";
@@ -48,9 +48,15 @@ export default function App() {
   };
   const dig = (s: string) => { setSymbol(s); setTab("research"); };
 
-  // Push while open: poll for alerts and raise a system notification for anything new.
+  // Background alerts: re-register this device (and its current rules) with the server on every
+  // open. When push isn't available, fall back to checking while the app is open.
+  const [pushState, setPushState] = useState("off");
   useEffect(() => {
     if (!rules) return;
+    syncPush(rules, muted).then(setPushState).catch(() => setPushState("off"));
+  }, [JSON.stringify(rules), muted.join(",")]);
+  useEffect(() => {
+    if (!rules || pushState === "on") return;
     const check = () => {
       if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
       api.digest({ hours: 24, rules, muted }).then((d) => {
@@ -67,7 +73,7 @@ export default function App() {
     check();
     const t = setInterval(check, 5 * 60 * 1000);
     return () => clearInterval(t);
-  }, [JSON.stringify(rules), muted.join(",")]);
+  }, [JSON.stringify(rules), muted.join(","), pushState]);
 
   const listen = () => {
     if (speaking) { speechSynthesis.cancel(); setSpeaking(false); return; }
@@ -100,7 +106,7 @@ export default function App() {
       )}
 
       {tab === "brief" && <Brief win={win} setWin={setWin} wins={wins} rules={rules} muted={muted} setMuted={setMuted} onDig={dig} onCount={setNeedCount} flash={flash} />}
-      {tab === "alerts" && <Alerts rules={rules} setRules={setRules} onDig={dig} />}
+      {tab === "alerts" && <Alerts rules={rules} setRules={setRules} onDig={dig} muted={muted} pushState={pushState} setPushState={setPushState} />}
       {tab === "research" && <Research symbol={symbol} setSymbol={setSymbol} demo={meta?.research_demo || []} book={meta?.portfolio || []} />}
       {tab === "book" && <Holdings onDig={dig} />}
       {tab === "about" && <About />}

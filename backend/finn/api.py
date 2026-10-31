@@ -15,7 +15,7 @@ from .config import PORTFOLIO, RESEARCH_DEMO, WEB_DIST
 from .net import FetchError
 from .pull import ask as ask_mod
 from .pull import research
-from .push import alerts, digest
+from .push import alerts, digest, webpush
 from .sources import screener
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
@@ -118,6 +118,47 @@ def ask(body: AskIn):
     except FetchError:
         raise HTTPException(404, f"No data for {body.symbol}")
     return ask_mod.answer(body.symbol.upper(), co["name"], body.q[:300])
+
+
+class SubIn(BaseModel):
+    subscription: dict
+    rules: dict = {}
+    muted: list = []
+
+
+@app.get("/api/push/key")
+def push_key():
+    return {"publicKey": webpush.public_key()}
+
+
+@app.post("/api/push/subscribe")
+def push_subscribe(body: SubIn):
+    return {"ok": webpush.subscribe(body.subscription, body.rules, body.muted)}
+
+
+@app.post("/api/push/unsubscribe")
+def push_unsubscribe(body: SubIn):
+    webpush.unsubscribe(body.subscription)
+    return {"ok": True}
+
+
+_last_tick = {"t": 0.0, "report": None}
+
+
+@app.get("/api/tick")
+def tick():
+    """Called every 10 minutes by a scheduled GitHub Action: keeps the server awake,
+    refreshes data, and sends background alerts. Cheap to call more often (rate-limited)."""
+    if time.time() - _last_tick["t"] < 120:
+        return {"skipped": True, "last": _last_tick["report"]}
+    _last_tick["t"] = time.time()
+    try:
+        ingest.refresh_all()
+    except Exception as e:
+        logging.warning("tick refresh failed: %s", e)
+    report = webpush.tick()
+    _last_tick["report"] = {**report, "at": time.time()}
+    return _last_tick["report"]
 
 
 _last_manual = {"t": 0.0}

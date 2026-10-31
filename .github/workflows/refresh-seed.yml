@@ -1,5 +1,6 @@
 # Nightly: pull EOD prices, filings and fundamentals, rebuild dossiers, commit the seed snapshot.
-# The deployed app then always boots with recent data even if a source blocks the host's IP.
+# The live server refreshes itself every 10 minutes (see tick.yml); this snapshot is the fallback a
+# fresh deploy boots from, so it doesn't need to trigger a redeploy (which would also reset the server).
 name: refresh-seed
 on:
   schedule: [{ cron: "30 12 * * 1-5" }]   # 18:00 IST, after market close

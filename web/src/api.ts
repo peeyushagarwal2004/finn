@@ -35,7 +35,32 @@ export const api = {
     j<any>("/api/ask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ symbol, q: question }) }),
   refresh: () => j<any>("/api/refresh", { method: "POST" }),
   stats: () => j<any>("/api/stats"),
+  pushKey: () => j<{ publicKey: string | null }>("/api/push/key"),
+  pushSubscribe: (subscription: any, rules: Rules, muted: string[]) =>
+    j<any>("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription, rules, muted }) }),
 };
+
+/** Subscribe this device to background alerts, or refresh its rules if already subscribed.
+ *  Returns "on", "off", "unsupported", "denied" or "not-configured". */
+export async function syncPush(rules: Rules, muted: string[], ask = false): Promise<string> {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || typeof Notification === "undefined") return "unsupported";
+  if (Notification.permission === "denied") return "denied";
+  if (Notification.permission !== "granted") {
+    if (!ask) return "off";
+    if ((await Notification.requestPermission()) !== "granted") return "denied";
+  }
+  const { publicKey } = await api.pushKey();
+  if (!publicKey) return "not-configured";
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    const raw = atob(publicKey.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (publicKey.length % 4)) % 4));
+    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, (c) => c.charCodeAt(0)) });
+  }
+  // sent every time the app opens: the free server's disk is wiped on restart, so this heals it
+  await api.pushSubscribe(sub.toJSON(), rules, muted);
+  return "on";
+}
 
 /* ---------- per-device preferences (rules, mutes, triage state) ---------- */
 const read = <T,>(k: string, d: T): T => {

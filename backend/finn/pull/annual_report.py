@@ -27,6 +27,40 @@ def _clean(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
+AUDITED = re.compile(r"\bOpinion\s+We\s+have\s+audited\s+the\s+(?:accompanying\s+)?(?:standalone|consolidated)", re.I)
+NOT_FS_AUDIT = re.compile(r"conditions of corporate governance|secretarial audit|internal financial controls with reference", re.I)
+
+
+def _is_report_start(page):
+    head = page[:2500]
+    if NOT_FS_AUDIT.search(head[:900]):
+        return False
+    # either a heading, or reports that open straight into "Opinion: We have audited the ..."
+    return bool((REPORT_START.search(head) and "opinion" in page.lower()) or AUDITED.search(re.sub(r"\s+", " ", head)))
+
+
+def _firm(block):
+    """The audit firm signs just above its ICAI registration number: 'For X LLP / Chartered Accountants / Firm Registration No.'"""
+    text = block.replace("\t", " ")
+    names = []
+    for m in re.finditer(r"Registration\s*N", text, re.I):
+        before = text[max(0, m.start() - 320):m.start()]
+        lines = [l for l in before.split("\n") if re.match(r"\s*For\s+(?:and\s+on\s+behalf\s+of\s+)?[A-Z]", l)]
+        if not lines:
+            continue
+        for part in re.split(r"\s+For\s+", " " + lines[-1].strip())[1:]:  # joint auditors share one line
+            part = re.sub(r"^and\s+on\s+behalf\s+of\s+", "", part, flags=re.I)
+            part = re.sub(r"\(formerly[^)]*\)?", "", part, flags=re.I)
+            part = re.sub(r"\s+Chartered\s+Accountants\s*$", "", part.strip())
+            if re.search(r"board of directors|director|limited$|ltd\.?$", part, re.I):
+                continue  # the company's own signature often shares the line with the auditor's
+            if 2 < len(part) < 70:
+                names.append(_clean(part))
+        if names:
+            break
+    return " and ".join(dict.fromkeys(names)) or None
+
+
 def scan(symbol):
     co = screener.company(symbol)
     ars = co["documents"].get("annual_reports") or []
@@ -45,7 +79,7 @@ def scan(symbol):
         return out
 
     # auditor's report: prefer the consolidated one, which covers the whole group
-    starts = [i for i, p in enumerate(pages) if REPORT_START.search(p[:1500]) and "opinion" in p.lower()]
+    starts = [i for i, p in enumerate(pages) if _is_report_start(p)]
     cons = [i for i in starts if "consolidated" in pages[i][:2500].lower()]
     s = (cons or starts or [None])[0]
     aud = {"found": s is not None}
@@ -58,7 +92,7 @@ def scan(symbol):
         aud["going_concern"] = bool(GOING.search(block))
         aud["key_audit_matters"] = len(set(i for i in range(s, min(s + 12, len(pages))) if re.search(r"key audit matter", pages[i], re.I)))
         m = AUDITOR.search(block)
-        aud["firm"] = _clean(m.group(1)) if m else None
+        aud["firm"] = _firm("\n".join(pages[s:s + 25])) or (_clean(m.group(1)) if m else None)
     out["auditor"] = aud
 
     # the board's declaration mentions conflict of interest; prefer it over AGM-notice boilerplate

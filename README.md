@@ -1,6 +1,6 @@
 # FINN
 
-Live demo: https://finn-6xsx.onrender.com (best on a phone; the free server takes about 50 seconds to wake up if nobody has used it recently)
+Live demo: https://finn-6xsx.onrender.com (best on a phone)
 
 FINN is my submission for the ENAM AI Engineer build challenge. It follows a portfolio of 18 NSE companies, reads every exchange filing and end-of-day price, and gives you a short note of what's worth reading. You can also research any NSE company, and it checks management's guidance on earnings calls against the results they reported later.
 
@@ -54,6 +54,8 @@ Without an API key the whole app still works, using rules for everything. With a
 - The same event often appears several times: once on NSE, once on BSE, and again as a results deck and a shareholder letter. I added a dedupe step that merges them into one item.
 - About half the results PDFs didn't parse with regex: some were scanned, some put labels and numbers on different lines, some had formula references like "(3+4)" in the row labels. That is where the model fallback is used, and it goes through the same check against reported totals.
 - The guidance parser read Pidilite's advertising spend ("3-5% of sales") as revenue growth, IndiGo's yield guidance as revenue growth, and a "16-17%" figure as a margin when it was something else. I added exclusions for cost ratios and unit metrics, and a check that throws out any margin target far from the company's actual margin level. A wrong verdict is worse than no verdict, so the rules leave out anything they can't place confidently.
+- The annual report scanner first found the auditor's opinion for 20 of 22 companies and the audit firm for 15. Two reports open straight into "Opinion: We have audited..." with no heading, and my firm-name pattern was matching "the Institute of Chartered Accountants of India" instead of the signature. The signature sits just above the firm's ICAI registration number, sometimes with two joint auditors on one line, so I anchored on that. It now gets all 22.
+- When I plugged in a Gemini key, the 2.5 models I had defaulted to turned out to be closed to new keys, and the 3.5 model used up its token limit thinking and returned truncated JSON. I moved to `gemini-3.5-flash` with low reasoning effort for bulk extraction and more headroom for the summary, retry on Google's frequent "high demand" responses, and fall back to rules when the JSON is malformed instead of failing the whole research page.
 - HDFC Bank's CEO change filing didn't include the new CEO's profile; it referred to an earlier filing. Instead of guessing, the app says where the profile was filed and links a LinkedIn search.
 
 ## Running it
@@ -72,11 +74,17 @@ Then open http://localhost:8000. A compressed snapshot of the data is included i
 
 ## What I left out
 
-- Reading annual reports in depth. The financial statements come from filed numbers, and guidance is on the calls, so I prioritised transcripts. Annual reports are the obvious next source for the question box.
-- Scraping LinkedIn, which its terms don't allow.
-- User accounts. Alert rules, mutes and read status are stored on the device.
+- Scraping LinkedIn, which its terms don't allow. Background on a new executive comes from the appointment filing, Wikipedia, or (clearly labelled) the language model.
+- User accounts. Alert rules, mutes and read status live on the device; the device sends its rules to the server along with its push subscription.
 - Intraday prices. The brief asked for end-of-day data.
-- Background push notifications when the app is closed. Notifications work while it is open or installed.
+
+## Running on a free server
+
+Render's free plan sleeps after 15 idle minutes and wipes its disk on restart. Three things work around that:
+
+- A GitHub Action (`tick.yml`) calls `/api/tick` every 10 minutes. That keeps the server awake (one service running all month fits in the 750 free hours), refreshes filings and prices, and sends background notifications.
+- Notifications use Web Push, so they arrive even when FINN is closed. Each device re-sends its subscription whenever the app opens, so a restart that wipes the server's copy fixes itself on the next visit. On iPhone, FINN has to be added to the home screen first, which is an Apple requirement.
+- A compressed snapshot in `seed/` means a fresh start still has data immediately; it's refreshed nightly by another Action.
 
 ## What I'd do next
 

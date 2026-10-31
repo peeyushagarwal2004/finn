@@ -6,3 +6,4 @@ beautifulsoup4==4.15.0
 pypdf==6.16.2
 yfinance==1.7.0
 pandas==3.0.5
+pywebpush==2.5.0

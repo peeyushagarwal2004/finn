@@ -10,3 +10,7 @@ services:
         sync: false
       - key: GROQ_API_KEY        # optional alternative free provider
         sync: false
+      - key: VAPID_PUBLIC_KEY    # background notifications (Web Push); generate with py_vapid
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false

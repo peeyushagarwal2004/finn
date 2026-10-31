@@ -3,6 +3,13 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# local runs read keys from a git-ignored .env; real environment variables (e.g. on Render) win
+if (ROOT / ".env").exists():
+    for _line in (ROOT / ".env").read_text().splitlines():
+        if "=" in _line and not _line.lstrip().startswith("#"):
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
 DATA_DIR = Path(os.environ.get("FINN_DATA_DIR", ROOT / "data"))
 SEED_DIR = Path(os.environ.get("FINN_SEED_DIR", ROOT / "seed"))
 WEB_DIST = ROOT / "web" / "dist"

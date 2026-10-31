@@ -5,7 +5,7 @@ Hello ENAM team,
 
 Here is my submission for the FINN build challenge.
 
-- Prototype: https://finn-6xsx.onrender.com (open it on a phone; the free server can take about 50 seconds to wake up)
+- Prototype: https://finn-6xsx.onrender.com (open it on a phone)
 - Repository: https://github.com/peeyushagarwal2004/finn
 - AI build history: the full Claude Code session export is attached
 
@@ -16,9 +16,9 @@ Main decisions:
 - I'd rather show nothing than show something wrong. Parsed results are checked against reported totals, and guidance the rules can't interpret confidently is left out.
 - NSE's and BSE's APIs block automated access, so I used the public NSE RSS feed and the public filing PDFs instead.
 
-What I left out: annual report analysis, user accounts, intraday data and background push notifications. The README has more detail, including a list of things that went wrong while building.
+What I left out: user accounts and intraday data. Background alerts use Web Push, and a scheduled job keeps the free server awake so it doesn't take 50 seconds to load. The README has more detail, including a list of things that went wrong while building.
 
-Next, I'd add a shared view for a team, bring annual reports into the research, and track guidance accuracy across years.
+Next, I'd add a shared view for a team, compare results with peers, and track guidance accuracy across years.
 
 Thank you,
 <YOUR NAME>
