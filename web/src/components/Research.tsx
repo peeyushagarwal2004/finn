@@ -175,7 +175,7 @@ function Ask({ symbol, name }: { symbol: string; name: string }) {
           <div className="answer" dangerouslySetInnerHTML={{ __html: a.answer.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\[(\d+)\]/g, "<sup>[$1]</sup>") }} />
           {a.mode === "extractive" && <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>Quoted directly from the transcripts, since no language model is configured.</div>}
           <details style={{ marginTop: 10 }}>
-            <summary className="muted" style={{ fontSize: 12.5 }}>{a.sources.length} passages from the calls</summary>
+            <summary className="muted" style={{ fontSize: 12.5 }}>{a.sources.length} source passages</summary>
             {a.sources.map((s: any) => (
               <div className="src" key={s.n}>
                 <b>[{s.n}] {s.label} · {s.speaker}</b> · <a href={`${s.url}#page=${s.page}`} target="_blank" rel="noreferrer">p.{s.page}</a>
