@@ -36,6 +36,24 @@ PROVIDERS = {
 # USD per 1M tokens (in, out), only used to show what the free tier saved
 LIST_PRICE = {"cheap": (0.10, 0.40), "strong": (0.30, 2.50)}
 
+_local = threading.local()
+
+
+class cached_only:
+    """Inside a web request, never wait on a model: answer from cache or return None,
+    and let the background loop make the real call."""
+    def __enter__(self):
+        self.prev = getattr(_local, "cached_only", False)
+        _local.cached_only = True
+
+    def __exit__(self, *a):
+        _local.cached_only = self.prev
+
+
+def in_request():
+    return getattr(_local, "cached_only", False)
+
+
 _usage_lock = threading.Lock()
 _usage = {"calls": 0, "cache_hits": 0, "tokens_in": 0, "tokens_out": 0, "usd": 0.0, "by_tier": {"cheap": 0, "strong": 0}}
 
@@ -93,6 +111,8 @@ def ask_json(prompt, tier="cheap", system=None, max_tokens=1500):
         with _usage_lock:
             _usage["cache_hits"] += 1
         return hit
+    if in_request():
+        return None
     body = {"model": model, "temperature": 0.1, "max_tokens": max_tokens,
             "messages": [{"role": "system", "content": sys_msg}, {"role": "user", "content": prompt}],
             "response_format": {"type": "json_object"}}

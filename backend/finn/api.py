@@ -47,12 +47,14 @@ def meta():
 
 @app.get("/api/digest")
 def get_digest(hours: float = 24, since: float | None = None, rules: str | None = None, muted: str = ""):
-    return digest.build(hours=hours, since=since, rules=_rules(rules), muted=[m for m in muted.split(",") if m])
+    with llm.cached_only():
+        return digest.build(hours=hours, since=since, rules=_rules(rules), muted=[m for m in muted.split(",") if m])
 
 
 @app.get("/api/brief")
 def get_brief(hours: float = 24, since: float | None = None, rules: str | None = None, muted: str = ""):
-    d = digest.build(hours=hours, since=since, rules=_rules(rules), muted=[m for m in muted.split(",") if m])
+    with llm.cached_only():
+        d = digest.build(hours=hours, since=since, rules=_rules(rules), muted=[m for m in muted.split(",") if m])
     return {"script": digest.brief_script(d)}
 
 

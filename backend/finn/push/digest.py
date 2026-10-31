@@ -10,7 +10,7 @@ import re
 import time
 from datetime import datetime
 
-from .. import store
+from .. import llm, store
 from ..config import LENDERS, PORTFOLIO, PORTFOLIO_SYMBOLS
 from ..sources import nse, prices
 from . import alerts, classify, people, results
@@ -83,7 +83,8 @@ def _enrich(item, symbol, name):
                 card = results.headline(symbol, lender=symbol in LENDERS)
             except Exception:
                 card = None
-            store.kv_set("results_card", key, card or {})
+            if not llm.in_request():  # a request-time card may lack the model fallback; let the background save it
+                store.kv_set("results_card", key, card or {})
         if card and card.get("period_end"):
             # the screener table may not have this quarter yet; never attach last quarter's numbers
             lag = (item["ts"] - datetime.fromisoformat(card["period_end"]).timestamp()) / 86400
@@ -101,7 +102,8 @@ def _enrich(item, symbol, name):
                 ppl = people.enrich(item, name)
             except Exception:
                 ppl = []
-            store.kv_set("people", item["id"], ppl)
+            if not llm.in_request():
+                store.kv_set("people", item["id"], ppl)
         if ppl:
             item["people"] = ppl
             ins = [p for p in ppl if p["direction"] == "in"]

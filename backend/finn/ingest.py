@@ -59,6 +59,8 @@ def start_background(interval=300):
         while True:
             try:
                 refresh_all()
+                from .push import digest
+                digest.build(hours=24 * 7)  # warm results cards and people (model calls happen here, not in requests)
             except Exception as e:
                 log.warning("refresh failed: %s", e)
             time.sleep(interval)
