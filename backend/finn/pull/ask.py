@@ -6,6 +6,7 @@ the answer is the passages themselves, with the sentences that match highlighted
 """
 import math
 import re
+import time
 from collections import Counter
 
 from .. import llm
@@ -45,26 +46,46 @@ def _chunks(symbol):
     return out
 
 
-def search(chunks, q, k=6):
-    docs = [_tok(c["text"]) for c in chunks]
-    if not docs:
+_INDEX: dict = {}
+
+
+def _index(symbol):
+    """Tokenise a company's calls and annual report once, then reuse for every question."""
+    ix = _INDEX.get(symbol)
+    if ix is None or time.time() - ix["ts"] > 6 * 3600:
+        chunks = _chunks(symbol)
+        docs = [Counter(_tok(c["text"])) for c in chunks]
+        lens = [sum(d.values()) for d in docs]
+        ix = {"ts": time.time(), "chunks": chunks, "docs": docs, "lens": lens,
+              "avg": (sum(lens) / len(lens)) if lens else 1, "df": Counter(w for d in docs for w in d)}
+        _INDEX[symbol] = ix
+    return ix
+
+
+def search(ix, q, k=6):
+    N = len(ix["chunks"])
+    if not N:
         return []
-    N, avg = len(docs), sum(map(len, docs)) / len(docs)
-    df = Counter(w for d in docs for w in set(d))
-    qt = _tok(q)
+    df, avg = ix["df"], ix["avg"]
     scored = []
-    for c, d in zip(chunks, docs):
-        tf = Counter(d)
-        s = sum(math.log(1 + (N - df[w] + 0.5) / (df[w] + 0.5)) * tf[w] * 2.2 / (tf[w] + 1.2 * (0.25 + 0.75 * len(d) / avg))
-                for w in qt if w in tf)
+    for c, tf, ln in zip(ix["chunks"], ix["docs"], ix["lens"]):
+        s = sum(math.log(1 + (N - df[w] + 0.5) / (df[w] + 0.5)) * tf[w] * 2.2 / (tf[w] + 1.2 * (0.25 + 0.75 * ln / avg))
+                for w in set(_tok(q)) if w in tf)
         if s > 0:
             scored.append((s, c))
     scored.sort(key=lambda x: -x[0])
-    return [c for _, c in scored[:k]]
+    # the calls are where management talks; the annual report is mostly tables. Let the report lead
+    # only for questions that are about its kind of content.
+    ar_q = re.search(r"auditor|audit|contingent|related.party|segment|subsidiar|tax|litigation|liabilit|remuneration|pledge|provision", q, re.I)
+    calls = [c for _, c in scored if c["speaker"] != "Annual report"]
+    report = [c for _, c in scored if c["speaker"] == "Annual report"]
+    if ar_q:
+        return (report[:4] + calls[:2])[:k]
+    return (calls[:k - 2] + report[:2])[:k] if calls else report[:k]
 
 
 PROMPT = """Answer the investor's question about {name} using ONLY these excerpts from the company's own earnings
-calls. Cite every claim with the excerpt number like [2]. If the excerpts don't answer it, say so plainly.
+calls and annual report. Cite every claim with the excerpt number like [2]. If the excerpts don't answer it, say so plainly.
 Keep it under 120 words; lead with the direct answer. Return JSON {{"answer": "...", "used": [numbers]}}.
 
 QUESTION: {q}
@@ -73,13 +94,14 @@ QUESTION: {q}
 
 
 def answer(symbol, name, q):
-    hits = search(_chunks(symbol), q)
+    hits = search(_index(symbol), q)
     sources = [{"n": i + 1, "label": h["label"], "speaker": h["speaker"], "page": h["page"], "url": h["url"],
                 "text": h["text"]} for i, h in enumerate(hits)]
     if not hits:
-        return {"answer": "Nothing in the last four earnings calls addresses that.", "sources": [], "mode": "none"}
+        return {"answer": "Nothing in the last four earnings calls or the annual report addresses that.", "sources": [], "mode": "none"}
     ctx = "\n\n".join(f"[{s['n']}] {s['label']} — {s['speaker']} (p.{s['page']}): {s['text']}" for s in sources)
-    js = llm.ask_json(PROMPT.format(name=name, q=q, ctx=ctx), tier="cheap", max_tokens=500)
+    js = llm.ask_json(PROMPT.format(name=name, q=q, ctx=ctx), tier="cheap", max_tokens=500,
+                     attempts=2, timeout=25)  # someone is waiting: short budget, then quote instead
     if isinstance(js, dict) and js.get("answer"):
         return {"answer": js["answer"], "sources": sources, "mode": "model"}
     # extractive fallback: the best sentences from the top passages, verbatim
@@ -89,9 +111,14 @@ def answer(symbol, name, q):
         for sent in re.split(r"(?<=[.!?])\s+", s["text"]):
             sent = sent.strip()
             hit = len(qt & set(_tok(sent)))
-            if len(sent) >= 60 and hit >= min(2, len(qt)):
+            digits = sum(ch.isdigit() for ch in sent) / max(len(sent), 1)
+            if sent.endswith("?") or digits > 0.15:  # an analyst's question or a table row isn't an answer
+                continue
+            if 60 <= len(sent) <= 400 and hit >= 1:
                 ranked.append((hit + 0.1 * bool(re.search(r"\d", sent)) - 0.02 * s["n"], sent, s["n"]))
     ranked.sort(key=lambda x: -x[0])
+    if ranked and ranked[0][0] >= 2:
+        ranked = [r for r in ranked if r[0] >= 1.5]  # if some sentences match well, drop the weak ones
     picks = [f"“{t}” [{n}]" for _, t, n in ranked[:3]]
     if not picks:
         return {"answer": "The calls touch on this only in passing — see the passages below.", "sources": sources, "mode": "extractive"}

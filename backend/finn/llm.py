@@ -97,7 +97,7 @@ def _extract_json(text):
             return None  # malformed or truncated: the caller falls back to rules
 
 
-def ask_json(prompt, tier="cheap", system=None, max_tokens=1500):
+def ask_json(prompt, tier="cheap", system=None, max_tokens=1500, attempts=5, timeout=90):
     """Return parsed JSON from the tier's model, or None when no provider/failed."""
     name, p = provider()
     if not name:
@@ -120,9 +120,9 @@ def ask_json(prompt, tier="cheap", system=None, max_tokens=1500):
     if effort:
         body["reasoning_effort"] = effort
         body["max_tokens"] = max_tokens + (6000 if effort != "low" else 1500)  # thinking tokens count against the limit
-    for attempt in range(5):
+    for attempt in range(attempts):
         try:
-            r = requests.post(f"{p['base']}/chat/completions", json=body, timeout=90,
+            r = requests.post(f"{p['base']}/chat/completions", json=body, timeout=timeout,
                               headers={"Authorization": f"Bearer {os.environ.get(p['key'], 'none')}"})
         except requests.RequestException:
             time.sleep(2 * (attempt + 1))
