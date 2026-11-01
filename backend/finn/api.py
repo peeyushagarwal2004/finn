@@ -29,6 +29,7 @@ def _startup():
         logging.info("seeded from snapshot")
     if os.environ.get("FINN_BACKGROUND", "1") == "1":
         ingest.start_background()
+        ingest.start_keepalive()
 
 
 def _rules(raw):

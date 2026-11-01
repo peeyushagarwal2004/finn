@@ -72,6 +72,28 @@ def prewarm():
     backtest_default()
 
 
+def start_keepalive(every=540):
+    """Render's free plan sleeps after 15 idle minutes, and a sleeping server takes ~50 s to wake.
+    GitHub's scheduled pings run only every few hours on a quiet repo, so the server also calls its
+    own public URL (which goes through Render's front door and counts as traffic) every 9 minutes.
+    The call is /api/tick, which also sends any pending background notifications."""
+    import os
+
+    import requests
+    base = os.environ.get("RENDER_EXTERNAL_URL")
+    if not base:
+        return
+
+    def loop():
+        while True:
+            time.sleep(every)
+            try:
+                requests.get(f"{base}/api/tick", timeout=120)
+            except requests.RequestException as e:
+                log.warning("keepalive: %s", e)
+    threading.Thread(target=loop, daemon=True, name="finn-keepalive").start()
+
+
 def start_background(interval=300):
     """Poll NSE every 5 minutes (its RSS TTL); full refresh is internally rate-limited."""
     def loop():
