@@ -7,6 +7,12 @@ export type Rules = {
   min_score: number;
 };
 
+/** Same as the server's defaults, so the first screen doesn't wait on a round trip to learn them. */
+export const DEFAULT_RULES: Rules = {
+  price_pct: 4, vol_mult: 2, sigma: 2.5, use_sigma: true, min_score: 65,
+  categories: ["results", "M&A", "management_change", "fund_raise", "litigation", "credit_rating", "pledging", "bonus_split", "capex"],
+};
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init);
   if (!r.ok) throw new Error((await r.text()) || r.statusText);
@@ -38,6 +44,47 @@ export const api = {
   pushKey: () => j<{ publicKey: string | null }>("/api/push/key"),
   pushSubscribe: (subscription: any, rules: Rules, muted: string[]) =>
     j<any>("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription, rules, muted }) }),
+};
+
+/* ---------- stale-while-revalidate: show the last answer instantly, then refresh quietly ---------- */
+const mem = new Map<string, any>();
+const PERSIST = /^\/api\/(digest|holdings|meta)/; // small enough to keep on the device between visits
+
+export function cached<T = any>(url: string): T | undefined {
+  if (mem.has(url)) return mem.get(url);
+  if (PERSIST.test(url)) {
+    try {
+      const v = localStorage.getItem("finn:c:" + url);
+      if (v) { const parsed = JSON.parse(v); mem.set(url, parsed); return parsed; }
+    } catch { /* storage unavailable: just fetch */ }
+  }
+  return undefined;
+}
+
+const inflight = new Map<string, Promise<any>>();
+export function fresh<T = any>(url: string, init?: RequestInit): Promise<T> {
+  const key = init?.body ? url + "|" + init.body : url;
+  if (inflight.has(key)) return inflight.get(key)!; // two screens asking for the same thing share one request
+  const p = j<T>(url, init).then((v) => {
+    mem.set(key, v);
+    if (!init && PERSIST.test(url)) { try { localStorage.setItem("finn:c:" + url, JSON.stringify(v)); } catch { /* quota: fine */ } }
+    return v;
+  }).finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+
+/** Call back with any saved copy right away, then again with the server's answer. */
+export function swr<T = any>(url: string, cb: (v: T, isFresh: boolean) => void, init?: RequestInit): Promise<void> {
+  const key = init?.body ? url + "|" + init.body : url;
+  const c = init ? mem.get(key) : cached<T>(url);
+  if (c !== undefined) cb(c, false);
+  return fresh<T>(url, init).then((v) => cb(v, true));
+}
+
+export const urls = {
+  digest: (p: { hours?: number; since?: number; rules?: Rules; muted?: string[] }) =>
+    `/api/digest?${q({ hours: p.hours, since: p.since, rules: p.rules, muted: (p.muted || []).join(",") })}`,
 };
 
 /** Subscribe this device to background alerts, or refresh its rules if already subscribed.

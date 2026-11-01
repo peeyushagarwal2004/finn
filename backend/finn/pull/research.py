@@ -74,6 +74,8 @@ def _run(symbol):
         doc["synthesis"] = synthesise(doc)
         doc["stages"]["synthesis"] = "done"
         doc["status"] = "done"
+        from .. import memo
+        memo.bump()  # the portfolio checklist reads dossiers
         doc["stage"] = None
         doc["llm"] = llm.status()
     except Exception as e:  # surface the failure in the UI rather than spinning forever

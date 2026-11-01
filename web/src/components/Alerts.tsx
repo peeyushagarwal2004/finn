@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, Rules, syncPush } from "../api";
+import { Rules, swr, syncPush, urls } from "../api";
 import { fmt, Section } from "./ui";
 import { headlineFor } from "./Cards";
 
@@ -21,10 +21,12 @@ export default function Alerts({ rules, setRules, onDig, muted, pushState, setPu
   useEffect(() => setDraft(rules), [rules]);
   useEffect(() => {
     window.clearTimeout(t.current);
-    t.current = window.setTimeout(() => api.backtest(draft).then(setBt).catch(() => setBt(null)), 250);
+    t.current = window.setTimeout(() => swr("/api/alerts/backtest", setBt, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rules: draft, sessions: 90 }),
+    }).catch(() => setBt(null)), 250);
   }, [JSON.stringify(draft)]);
   useEffect(() => {
-    api.digest({ hours: 168, rules }).then((d) => setLive([...d.needs_you, ...d.worth_knowing].filter((i: any) => i.alert).slice(0, 12))).catch(() => setLive([]));
+    swr(urls.digest({ hours: 168, rules }), (d: any) => setLive([...d.needs_you, ...d.worth_knowing].filter((i: any) => i.alert).slice(0, 12))).catch(() => setLive((l) => l || []));
   }, [JSON.stringify(rules)]);
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(rules);

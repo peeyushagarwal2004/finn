@@ -4,7 +4,7 @@ import logging
 import threading
 import time
 
-from . import store
+from . import memo, store
 from .config import PORTFOLIO_SYMBOLS
 from .net import FetchError
 from .sources import nse, prices, screener
@@ -41,8 +41,16 @@ def refresh_companies(symbols=PORTFOLIO_SYMBOLS, ttl=6 * 3600):
             log.warning("screener %s: %s", s, e)
 
 
+def _fingerprint():
+    with store._lock:
+        f = store._conn.execute("SELECT COUNT(*), MAX(ts), SUM(LENGTH(summary)) FROM filings").fetchone()
+    eod = store.kv_get("eod", PORTFOLIO_SYMBOLS[0]) or [[None]]
+    return (f, eod[-1][0])
+
+
 def refresh_all(force=False):
     t0 = time.time()
+    before = _fingerprint()
     try:
         if force or (store.kv_age("eod", PORTFOLIO_SYMBOLS[0]) or 1e9) > 3 * 3600:
             prices.refresh(PORTFOLIO_SYMBOLS)
@@ -51,6 +59,17 @@ def refresh_all(force=False):
     refresh_companies(ttl=1800 if force else 6 * 3600)
     nse.poll(set(PORTFOLIO_SYMBOLS), names())
     store.kv_set("meta", "last_refresh", {"ts": time.time(), "secs": round(time.time() - t0, 1)})
+    if _fingerprint() != before:  # only new filings or prices invalidate the cached pages
+        memo.bump()
+
+
+def prewarm():
+    """Compute the default pages ahead of time so the first visitor gets a cached response."""
+    from .api import backtest_default, digest_cached, holdings_cached
+    for h in (24, 72, 168):
+        digest_cached(h)
+    holdings_cached()
+    backtest_default()
 
 
 def start_background(interval=300):
@@ -61,6 +80,7 @@ def start_background(interval=300):
                 refresh_all()
                 from .push import digest
                 digest.build(hours=24 * 7)  # warm results cards and people (model calls happen here, not in requests)
+                prewarm()
             except Exception as e:
                 log.warning("refresh failed: %s", e)
             time.sleep(interval)

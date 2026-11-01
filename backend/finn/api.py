@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ingest, llm, snapshot, store
+from . import ingest, llm, memo, snapshot, store
 from .config import PORTFOLIO, RESEARCH_DEMO, WEB_DIST
 from .net import FetchError
 from .pull import ask as ask_mod
@@ -45,35 +45,58 @@ def meta():
             "default_rules": alerts.merge_rules()}
 
 
+def digest_cached(hours=24, since=None, rules=None, muted=()):
+    r = alerts.merge_rules(rules)
+    since = int(since // 60 * 60) if since else None  # "since your last visit" rounded to the minute
+    key = ("digest", hours, since, json.dumps(r, sort_keys=True), ",".join(sorted(muted)))
+
+    def build():
+        with llm.cached_only():
+            return digest.build(hours=hours, since=since, rules=r, muted=list(muted))
+    return memo.get(key, build)
+
+
+def holdings_cached():
+    return memo.get(("holdings",), digest.holdings)
+
+
+def backtest_default():
+    return memo.get(("backtest", json.dumps(alerts.merge_rules(), sort_keys=True), 90),
+                    lambda: alerts.backtest(alerts.merge_rules(), sessions=90))
+
+
 @app.get("/api/digest")
 def get_digest(hours: float = 24, since: float | None = None, rules: str | None = None, muted: str = ""):
-    with llm.cached_only():
-        return digest.build(hours=hours, since=since, rules=_rules(rules), muted=[m for m in muted.split(",") if m])
+    return digest_cached(hours, since, _rules(rules), tuple(m for m in muted.split(",") if m))
 
 
 @app.get("/api/brief")
 def get_brief(hours: float = 24, since: float | None = None, rules: str | None = None, muted: str = ""):
-    with llm.cached_only():
-        d = digest.build(hours=hours, since=since, rules=_rules(rules), muted=[m for m in muted.split(",") if m])
+    d = digest_cached(hours, since, _rules(rules), tuple(m for m in muted.split(",") if m))
     return {"script": digest.brief_script(d)}
 
 
 @app.get("/api/holdings")
 def get_holdings():
-    return digest.holdings()
+    return holdings_cached()
 
 
 @app.get("/api/stats")
 def stats():
     """What FINN has read and what it cost, for the 'How FINN works' page."""
+    counts_part = memo.get(("stats",), _stats_counts, ttl=1800)
+    return {**counts_part, "llm": llm.status(), "feed": store.kv_get("nse", "feed_stats"),
+            "last_refresh": store.kv_get("meta", "last_refresh")}
+
+
+def _stats_counts():
     with store._lock:
         counts = dict(store._conn.execute("SELECT ns, COUNT(*) FROM kv GROUP BY ns").fetchall())
         filings = store._conn.execute("SELECT COUNT(*) FROM filings").fetchone()[0]
         pdf_pages = store._conn.execute("SELECT COALESCE(SUM(json_array_length(v)), 0) FROM kv WHERE ns='pdftext'").fetchone()[0]
     return {"filings_stored": filings, "pdfs_read": counts.get("pdftext", 0), "pdf_pages": pdf_pages,
             "dossiers": counts.get("research", 0), "transcripts": counts.get("guidance", 0),
-            "annual_reports": counts.get("governance", 0), "llm_cached_answers": counts.get("llm", 0),
-            "llm": llm.status(), "feed": store.kv_get("nse", "feed_stats"), "last_refresh": store.kv_get("meta", "last_refresh")}
+            "annual_reports": counts.get("governance", 0), "llm_cached_answers": counts.get("llm", 0)}
 
 
 class RulesIn(BaseModel):
@@ -83,7 +106,8 @@ class RulesIn(BaseModel):
 
 @app.post("/api/alerts/backtest")
 def backtest(body: RulesIn):
-    return alerts.backtest(alerts.merge_rules(body.rules), sessions=min(max(body.sessions, 20), 240))
+    r, n = alerts.merge_rules(body.rules), min(max(body.sessions, 20), 240)
+    return memo.get(("backtest", json.dumps(r, sort_keys=True), n), lambda: alerts.backtest(r, sessions=n))
 
 
 @app.get("/api/search")

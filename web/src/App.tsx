@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, prefs, Rules, syncPush } from "./api";
+import { api, DEFAULT_RULES, prefs, Rules, swr, syncPush } from "./api";
 import About from "./components/About";
 import Alerts from "./components/Alerts";
 import Brief, { Win, windows } from "./components/Brief";
@@ -16,7 +16,7 @@ prefs.write("lastVisit", Date.now() / 1000);
 export default function App() {
   const [tab, setTab] = useState<Tab>(() => (location.hash.slice(1) as Tab) || "brief");
   const [meta, setMeta] = useState<any>(null);
-  const [rules, setRulesState] = useState<Rules | null>(() => prefs.read<Rules | null>("rules", null));
+  const [rules, setRulesState] = useState<Rules | null>(() => prefs.read<Rules | null>("rules", null) || DEFAULT_RULES);
   const [muted, setMutedState] = useState<string[]>(() => prefs.read("muted", []));
   const wins = useMemo(() => windows(LAST_VISIT), []);
   const [win, setWin] = useState<Win>(wins.find((w) => w.key === "24") || wins[0]);
@@ -27,8 +27,15 @@ export default function App() {
   const [toast, setToast] = useState<{ msg: string; undo?: () => void } | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const toastT = useRef<number>();
+  const [mounted, setMounted] = useState<Set<Tab>>(() => new Set<Tab>([tab]));
+  useEffect(() => { setMounted((m) => (m.has(tab) ? m : new Set([...m, tab]))); }, [tab]);
+  useEffect(() => {
+    // once the first screen is up, load the other tabs quietly so the first switch is instant
+    const t = window.setTimeout(() => setMounted((m) => new Set<Tab>([...m, "brief", "alerts", "book", "research"])), 1200);
+    return () => window.clearTimeout(t);
+  }, []);
 
-  useEffect(() => { api.meta().then((m) => { setMeta(m); if (!rules) setRulesState(m.default_rules); }); }, []);
+  useEffect(() => { swr("/api/meta", (m: any) => { setMeta(m); setRulesState((r) => r || m.default_rules); }).catch(() => {}); }, []);
   useEffect(() => { document.documentElement.dataset.theme = theme; prefs.write("theme", theme); document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f6f2ea" : "#121211"); }, [theme]);
   useEffect(() => { if (location.hash.slice(1) !== tab) location.hash = tab; window.scrollTo({ top: 0 }); }, [tab]);
   useEffect(() => {
@@ -105,11 +112,12 @@ export default function App() {
         <div className="player">Reading the note aloud ({win.label.toLowerCase()})<span className="spacer" /><button onClick={listen}>Stop</button></div>
       )}
 
-      {tab === "brief" && <Brief win={win} setWin={setWin} wins={wins} rules={rules} muted={muted} setMuted={setMuted} onDig={dig} onCount={setNeedCount} flash={flash} />}
-      {tab === "alerts" && <Alerts rules={rules} setRules={setRules} onDig={dig} muted={muted} pushState={pushState} setPushState={setPushState} />}
-      {tab === "research" && <Research symbol={symbol} setSymbol={setSymbol} demo={meta?.research_demo || []} book={meta?.portfolio || []} />}
-      {tab === "book" && <Holdings onDig={dig} />}
-      {tab === "about" && <About />}
+      {/* tabs stay mounted once opened, so switching back is instant and keeps scroll-free state */}
+      <div hidden={tab !== "brief"}>{mounted.has("brief") && <Brief win={win} setWin={setWin} wins={wins} rules={rules} muted={muted} setMuted={setMuted} onDig={dig} onCount={setNeedCount} flash={flash} />}</div>
+      <div hidden={tab !== "alerts"}>{mounted.has("alerts") && <Alerts rules={rules} setRules={setRules} onDig={dig} muted={muted} pushState={pushState} setPushState={setPushState} />}</div>
+      <div hidden={tab !== "research"}>{mounted.has("research") && <Research symbol={symbol} setSymbol={setSymbol} demo={meta?.research_demo || []} book={meta?.portfolio || []} />}</div>
+      <div hidden={tab !== "book"}>{mounted.has("book") && <Holdings onDig={dig} />}</div>
+      <div hidden={tab !== "about"}>{mounted.has("about") && <About />}</div>
 
       {tab !== "research" && (
         <div className="foot">

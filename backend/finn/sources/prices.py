@@ -50,8 +50,24 @@ def series(symbol):
     return store.kv_get("eod", symbol) or []
 
 
+_SIGNALS: dict = {}
+
+
 def signals(rows):
-    """Annotate each session with ret %, volume multiple vs prior 20 sessions, and sigma."""
+    """Annotate each session with ret %, volume multiple vs prior 20 sessions, and sigma.
+    Prices change once a day, so the result is memoised on (first date, last date, length)."""
+    if not rows:
+        return []
+    key = (rows[0][0], rows[-1][0], len(rows), rows[-1][4])
+    hit = _SIGNALS.get(key)
+    if hit is None:
+        hit = _SIGNALS[key] = _signals(rows)
+        if len(_SIGNALS) > 200:
+            _SIGNALS.pop(next(iter(_SIGNALS)))
+    return hit
+
+
+def _signals(rows):
     out = []
     for i in range(1, len(rows)):
         d, o, h, lo, c, v = rows[i]

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, prefs, Rules } from "../api";
+import { prefs, Rules, swr, urls } from "../api";
 import { PushCard, WorthRow, headlineFor } from "./Cards";
 import { fmt, Icon, Section } from "./ui";
 
@@ -29,10 +29,11 @@ export default function Brief({ win, setWin, wins, rules, muted, setMuted, onDig
   const widened = useRef(false);
   useEffect(() => {
     setErr(null);
-    setD(null);
-    api.digest({ hours: win.hours, since: win.since, rules, muted }).then((x) => {
-      // on a quiet day, open on the first window that has something in it
+    let saw = false;
+    swr(urls.digest({ hours: win.hours, since: win.since, rules, muted }), (x: any, isFresh) => {
+      // on a quiet day, open on the first window that has something in it (decided on fresh data only)
       const empty = x.counts.filings + x.counts.moves === 0;
+      if (!isFresh) { saw = true; return setD(x); }
       if (empty && !widened.current) {
         const i = wins.findIndex((w) => w.key === win.key);
         if (i >= 0 && i < wins.length - 1) {
@@ -43,7 +44,8 @@ export default function Brief({ win, setWin, wins, rules, muted, setMuted, onDig
       }
       widened.current = true;
       setD(x);
-    }).catch((e) => setErr(String(e.message || e)));
+    }).catch((e) => { if (!saw) setErr(String(e.message || e)); });
+    if (!saw) setD(null);
   }, [win.key, JSON.stringify(rules), muted.join(",")]);
 
   useEffect(() => prefs.write("done", done), [done]);

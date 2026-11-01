@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { swr } from "../api";
 import { fmt, Section } from "./ui";
 
 export default function About() {
   const [s, setS] = useState<any>(null);
-  useEffect(() => { api.stats().then(setS).catch(() => setS({})); }, []);
+  useEffect(() => { swr("/api/stats", setS).catch(() => setS((x: any) => x || {})); }, []);
   const llm = s?.llm || {};
   const n = (v: any) => (v == null ? "–" : Number(v).toLocaleString("en-IN"));
 

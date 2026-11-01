@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { swr } from "../api";
 import { Delta, fmt, Section, Spark } from "./ui";
 
 type Sort = "move" | "sector" | "drawdown";
@@ -12,7 +12,7 @@ export default function Holdings({ onDig }: { onDig: (s: string) => void }) {
   const [rows, setRows] = useState<any[] | null>(null);
   const [sort, setSort] = useState<Sort>("move");
   const [view, setView] = useState<View>("prices");
-  useEffect(() => { api.holdings().then(setRows).catch(() => setRows([])); }, []);
+  useEffect(() => { swr("/api/holdings", setRows).catch(() => setRows((r) => r || [])); }, []);
 
   const sorted = (rows || []).slice().sort((a, b) =>
     sort === "move" ? Math.abs(b.eod?.ret ?? 0) - Math.abs(a.eod?.ret ?? 0)
