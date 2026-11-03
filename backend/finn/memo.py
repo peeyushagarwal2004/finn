@@ -2,7 +2,9 @@
 
 The free server has about a tenth of a CPU, so a page should never be recomputed when nothing
 underneath it has changed. Every cached response is keyed by its parameters and by a data
-version that the refresh loop bumps whenever it stores new filings or prices.
+version that the refresh loop bumps whenever it stores new filings or prices. Entries also
+expire after half an hour so that time windows ("the last 24 hours") move on when no new data
+arrives; rebuilding them more often than that kept the CPU busy for nothing.
 """
 import threading
 import time
@@ -18,7 +20,7 @@ def bump():
         _cache.clear()
 
 
-def get(key, fn, ttl=600):
+def get(key, fn, ttl=1800):
     k = (key, _version["n"])
     now = time.time()
     with _lock:

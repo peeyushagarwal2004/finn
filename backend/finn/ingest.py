@@ -1,8 +1,11 @@
 """Refresh loop: EOD prices, screener pages (announcements + fundamentals), NSE RSS."""
 import hashlib
 import logging
+import multiprocessing
+import os
 import threading
 import time
+from concurrent.futures import ProcessPoolExecutor
 
 from . import memo, store
 from .config import PORTFOLIO_SYMBOLS
@@ -48,9 +51,9 @@ def _fingerprint():
     return (f, eod[-1][0])
 
 
-def refresh_all(force=False):
-    t0 = time.time()
-    before = _fingerprint()
+def _fetch_sources(force):
+    """Runs in a child process: download and parse prices, screener pages and the NSE feed, and
+    warm the model answers for the weekly note. Everything lands in SQLite."""
     try:
         if force or (store.kv_age("eod", PORTFOLIO_SYMBOLS[0]) or 1e9) > 3 * 3600:
             prices.refresh(PORTFOLIO_SYMBOLS)
@@ -58,9 +61,39 @@ def refresh_all(force=False):
         log.warning("prices: %s", e)
     refresh_companies(ttl=1800 if force else 6 * 3600)
     nse.poll(set(PORTFOLIO_SYMBOLS), names())
-    store.kv_set("meta", "last_refresh", {"ts": time.time(), "secs": round(time.time() - t0, 1)})
-    if _fingerprint() != before:  # only new filings or prices invalidate the cached pages
-        memo.bump()
+    from .push import digest
+    digest.build(hours=24 * 7)  # warm results cards and people (model calls happen here, not in requests)
+
+
+def _lower_priority():
+    if hasattr(os, "nice"):
+        os.nice(19)
+
+
+_refreshing = threading.Lock()
+
+
+def refresh_all(force=False):
+    """The free server has about a tenth of a CPU. Parsing 18 screener pages and a year of prices
+    takes it minutes, and in a thread of the web process that froze every page for as long (a
+    20 s load for a 1 KB file). So the work runs in a separate, lowest-priority process: it has its
+    own interpreter lock, and the scheduler gives page requests the CPU first. Returns whether new
+    data arrived, or None if a refresh was already running."""
+    if not _refreshing.acquire(blocking=False):
+        return None
+    try:
+        t0 = time.time()
+        before = _fingerprint()
+        with ProcessPoolExecutor(1, mp_context=multiprocessing.get_context("spawn"),
+                                 initializer=_lower_priority) as pool:
+            pool.submit(_fetch_sources, force).result()
+        store.kv_set("meta", "last_refresh", {"ts": time.time(), "secs": round(time.time() - t0, 1)})
+        changed = _fingerprint() != before
+        if changed:  # only new filings or prices invalidate the cached pages
+            memo.bump()
+        return changed
+    finally:
+        _refreshing.release()
 
 
 def prewarm():
@@ -100,8 +133,6 @@ def start_background(interval=300):
         while True:
             try:
                 refresh_all()
-                from .push import digest
-                digest.build(hours=24 * 7)  # warm results cards and people (model calls happen here, not in requests)
                 prewarm()
             except Exception as e:
                 log.warning("refresh failed: %s", e)
